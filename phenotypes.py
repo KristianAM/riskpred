@@ -3,8 +3,6 @@ from scipy import stats
 import genotypes
 from scipy import linalg
 import LDpred
-#sciz 0.05 - 0.1
-
 
 def get_LDpred_ld_tables(snps, ld_radius=100, ld_window_size=0, h2=None, n_training=None):
     """
@@ -72,7 +70,7 @@ def simulate_traits_fast(n, m, h2 = 0.5, p = 1.0):
 
 	return betas
 
-def simulate_phenotypes(n, m, n_samples = 10,  genotype = None,  h2 = 0.5, p = 1.0, r2 = 0.9, m_ld_chunk_size = 100, p_threshold = 0.05, liability = None, validation_set = None):
+def simulate_phenotypes(n, m, n_samples = 10,  genotype = None,  h2 = 0.5, p = 1.0, r2 = 0.9, m_ld_chunk_size = 100, p_threshold = 0.05, validation_set = None):
 	#Simulate true betas
 	betas = simulate_traits_fast(n, m, h2, p)
 
@@ -107,22 +105,8 @@ def simulate_phenotypes(n, m, n_samples = 10,  genotype = None,  h2 = 0.5, p = 1
 	val_accuracy_inf = []
 	val_accuracy_LDpred = []
 
-	#mean validation accuracies over all validation sets
-	accSMT = []
-	accPRS = []
-	accPval = []
-	accinf = []
-	accLDpred = []
-
 	#for each genotype dataset
 	for i in xrange(n_samples):
-		#calculate true phenotype
-		#phen_noise =  stats.norm.rvs(0, sp.sqrt(1.0 - h2), size= n)
-		#phen_noise = sp.sqrt((1.0 - h2) / sp.var(phen_noise)) * phen_noise
-		#genetic_part = sp.dot(traingeno.T, betas)
-		#genetic_part = sp.sqrt(h2 / sp.var(genetic_part)) * genetic_part
-
-		#true_phen.append(genetic_part + phen_noise)
 
 		#Simulate effect sizes
 		noises = stats.norm.rvs(0,1,size=m)
@@ -141,8 +125,8 @@ def simulate_phenotypes(n, m, n_samples = 10,  genotype = None,  h2 = 0.5, p = 1
 				noises_ld[m_i:m_end]  = sp.dot(C.T,noises[m_i:m_end])
 			beta_hats = betas_ld + noises_ld
 			for m_i in range(0,m, m_ld_chunk_size):
-				#calculate the ld corrected betaHats under the infinitesimal model
 
+				#calculate the ld corrected betaHats under the infinitesimal model
 				m_end = m_i + m_ld_chunk_size
 				A = ((m/h2) * sp.eye(m_ld_chunk_size) + (n/(1)) * sample_D)
 				Ainv = linalg.pinv(A)
@@ -202,47 +186,11 @@ def simulate_phenotypes(n, m, n_samples = 10,  genotype = None,  h2 = 0.5, p = 1
 		val_accuracy_LDpred.append(stats.pearsonr(validation_phen, YhatsLDpred[i])[0]**2)
 
 
-
-		#If we wish to find proportion of cases and controls
-		# if liability != None:
-
-		# 	#init result lists
-		# 	trueliab = []
-		# 	SMTliab = []
-		# 	PRSliab = []
-		# 	Pvalliab = []
-
-		# 	for j in xrange(len(true_phen[i])):
-		# 		#find true cases / controls
-		# 		if true_phen[i][j] > liability:
-		# 			trueliab.append("case")
-		# 		else:
-		# 			trueliab.append("control")
-
-		# 		#find SMT liability
-		# 		if YhatsSMT[i][j] > liability:
-		# 			SMTliab.append("case")
-		# 		else:
-		# 			SMTliab.append("control")
-
-		# 		#find PRS liability
-		# 		if YhatsPRS[i][j] > liability:
-		# 			PRSliab.append("case")
-		# 		else:
-		# 			PRSliab.append("control")
-
-		# 		#find Pval liability
-		# 		if YhatsPval[i][j] > liability:
-		# 			Pvalliab.append("case")
-		# 		else:
-		# 			Pvalliab.append("control")
-
-
-	accSMT.append(sp.mean(val_accuracy_SMT))
-	accPRS.append(sp.mean(val_accuracy_PRS))
-	accPval.append(sp.mean(val_accuracy_Pval))
-	accinf.append(sp.mean(val_accuracy_inf))
-	accLDpred.append(sp.mean(val_accuracy_LDpred))
+	accSMT = sp.mean(val_accuracy_SMT)
+	accPRS = sp.mean(val_accuracy_PRS)
+	accPval = sp.mean(val_accuracy_Pval)
+	accinf = sp.mean(val_accuracy_inf)
+	accLDpred = sp.mean(val_accuracy_LDpred)
 
 	return  accSMT, accPRS, accPval, accinf, accLDpred
 
@@ -263,21 +211,21 @@ def printtable(filename, p, N, M, Ntraits, validationN = 5):
 
 						print >>f, N[i],"\t",M[m],"\t",j,"\t",output[0],"\t",output[1], "\t", output[2], "\t", output[3], "\t", output[4], "\n"
 if __name__ == "__main__":
-	""
-	# p = [x*0.0002 for x in range(1,11)]
-	# p = p + [x*0.001 for x in range(1,11)]
-	# p = p + [x*0.01 for x in range(1,11)]
-	# p = p + [x*0.1 for x in range(1,11)]
-	# N = [3000]
-	# M = [6000]
-	# printtable("effectofP_NM0.5", p = p, N = N, M = M, Ntraits = 5 )
-	# print "0.5"
-	# N = [4500]
-	# printtable("effectofP_NM0.8", p = p, N = N, M = M, Ntraits = 5,)
-	# print "0.8"
-	# N = [9000]
-	# printtable("effectofP_NM0.1.5", p = p, N = N, M = M, Ntraits = 5)
-	# print "1.5"
-	# #N = [30000]
-	# #printtable("effectofP_NM0.10.0", p = p, N = N, M = M, Ntraits = 5)
+	
+	p = [x*0.0002 for x in range(1,11)]
+	p = p + [x*0.001 for x in range(1,11)]
+	p = p + [x*0.01 for x in range(1,11)]
+	p = p + [x*0.1 for x in range(1,11)]
+	N = [3000]
+	M = [6000]
+	printtable("effectofP_NM0.5", p = p, N = N, M = M, Ntraits = 20 )
+	print "0.5"
+	N = [4500]
+	printtable("effectofP_NM0.8", p = p, N = N, M = M, Ntraits = 20,)
+	print "0.8"
+	N = [9000]
+	printtable("effectofP_NM0.1.5", p = p, N = N, M = M, Ntraits = 20)
+	print "1.5"
+	N = [30000]
+	printtable("effectofP_NM0.10.0", p = p, N = N, M = M, Ntraits = 20)
 	

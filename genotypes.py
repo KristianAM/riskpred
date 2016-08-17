@@ -55,7 +55,6 @@ def simulate_genotypes_w_ld(n, m, n_samples, m_ld_chunk_size = 100, r2 = 0.9):
 		snps = (snps-snps_means)/snps_stds
 		val_set_gen.append(snps)
 		val_set_D.append(get_sample_D(n = n, m = m_ld_chunk_size, num_sim = 100, r2 = r2))
-		print len(val_set_gen)
 	return val_set_gen, val_set_D
 
 
