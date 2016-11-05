@@ -55,6 +55,8 @@ def simulate_genotypes_w_ld(n, m, n_samples, m_ld_chunk_size = 100, r2 = 0.9):
 		snps = (snps-snps_means)/snps_stds
 		val_set_gen.append(snps)
 		val_set_D.append(get_sample_D(n = n, m = m_ld_chunk_size, num_sim = 100, r2 = r2))
+		if sp.isnan(val_set_gen).any():
+			return simulate_genotypes_w_ld(n, m, n_samples, m_ld_chunk_size = 100, r2 = 0.9)
 	return val_set_gen, val_set_D
 
 
@@ -65,7 +67,7 @@ def write_genotypes(filename, genotype):
 	sp.savetxt(filename + ".geno.txt", genotype[0])
 	sp.savetxt(filename + ".D.txt", genotype[1])
 
-def printtable(filename, p, N, M, Ntraits, validation_size = 1000, validationN = 20):
+def printtable(filename, p, N, M, Ntraits, validation_size = 1000, validationN = 10):
 	with open(filename, 'w') as f:
 		print >>f, 'N \t M \t P \t SMT \t PRS \n'
 		for i in range(len(N)):
@@ -96,4 +98,4 @@ if __name__ == "__main__":
 	#		data = simulate_genotypes_w_ld(n = n, m = m, n_samples = 1, m_ld_chunk_size = 100, r2 = r)
 	#		filename = "genotypes/genotypes.n." + str(n) + "m." + str(m) + "r2." + str(r)
 	#		write_genotypes(filename, data[0])
-	"derp"
+	""
