@@ -459,12 +459,12 @@ def printtable(filename, p, N, M, Ntraits, validationN = 5):
 						 r2 = 0.9, m_ld_chunk_size = 100, p_threshold = 5e-8, validation_set = None, alpha = None, verbose = False)
 						print >>f, N[i],"\t",M[m],"\t",j,"\t",output[0],"\t",output[1], "\t", output[2], "\t", output[3], "\t", output[4], "\t", output[5], "\t", output[6], "\n"
 
-def alpha_experiment(n, m, h2, p, r2, m_ld_chunk_size, p_threshold, filename):
+def alpha_experiment(n, m, h2, p, r2, m_ld_chunk_size, p_threshold, filename, n_samples = 100):
 	with open(filename, 'w') as f:
 		print >>f, 'N \t M \t P \t Alpha, accuracy \n'
 		for j in p:
 			print j
-			output = estimate_alpha(n, m, h2, j, r2, m_ld_chunk_size, p_threshold, testing = True, n_samples = 100)
+			output = estimate_alpha(n, m, h2, j, r2, m_ld_chunk_size, p_threshold, testing = True, n_samples = n_samples)
 			for i in range(len(output[1])):
 				print >>f, n, "\t", m, "\t", j, "\t", output[1][i], "\t", output[0][i], "\n"
 
@@ -476,7 +476,7 @@ def r2_experiment(n, m, h2, p, m_ld_chunk_size, p_threshold, filename):
 		for j in p:
 			print j
 			for i in r2:
-				validation = genotypes.simulate_genotypes_w_ld(n = 2000, m = m, r2 = i n_samples = 10)
+				validation = genotypes.simulate_genotypes_w_ld(n = 2000, m = m, r2 = i, n_samples = 10)
 				for k in range(20):
 					output = test_accuracy(n = n, m = m, n_samples = 10,  genotype = validation,  h2 = 0.5, p = j,
 					 r2 = i, m_ld_chunk_size = 100, p_threshold = 5e-8, alpha = 0.5, verbose = False)
@@ -511,7 +511,7 @@ def estimate_alpha(n, m,  h2, p, r2, m_ld_chunk_size, p_threshold, testing = Fal
 			cojopred_beta_hats = cojo_beta_hats[:]
 
 
-			sample = genotypes.simulate_genotypes_w_ld(n = n, m = m, n_samples = 1, m_ld_chunk_size = m_ld_chunk_size, r2 = r2)
+			sample = genotypes.simulate_genotypes_w_ld(n = n, m = m, n_samples = 10, m_ld_chunk_size = m_ld_chunk_size, r2 = r2)
 			geno = sample[0][0]
 
 			Yhatscojopred = sp.dot(geno.T, cojo_beta_hats)
