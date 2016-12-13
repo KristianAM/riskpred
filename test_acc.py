@@ -455,7 +455,8 @@ def printtable(filename, p, N, M, Ntraits, validationN = 5):
 				for j in p:
 					print j
 					for l in range(Ntraits):
-						output = test_accuracy(N[i], M[m], n_samples = validationN,  genotype = validation,  h2 = 0.5, p = j, r2 = 0.9, m_ld_chunk_size = 100, p_threshold = 5e-8, validation_set = None, alpha = None, verbose = False)
+						output = test_accuracy(N[i], M[m], n_samples = validationN,  genotype = validation,  h2 = 0.5, p = j,
+						 r2 = 0.9, m_ld_chunk_size = 100, p_threshold = 5e-8, validation_set = None, alpha = None, verbose = False)
 						print >>f, N[i],"\t",M[m],"\t",j,"\t",output[0],"\t",output[1], "\t", output[2], "\t", output[3], "\t", output[4], "\t", output[5], "\t", output[6], "\n"
 
 def alpha_experiment(n, m, h2, p, r2, m_ld_chunk_size, p_threshold, filename):
@@ -463,17 +464,31 @@ def alpha_experiment(n, m, h2, p, r2, m_ld_chunk_size, p_threshold, filename):
 		print >>f, 'N \t M \t P \t Alpha, accuracy \n'
 		for j in p:
 			print j
-			output = estimate_alpha(n, m, h2, j, r2, m_ld_chunk_size, p_threshold, testing = True)
+			output = estimate_alpha(n, m, h2, j, r2, m_ld_chunk_size, p_threshold, testing = True, n_samples = 100)
 			for i in range(len(output[1])):
 				print >>f, n, "\t", m, "\t", j, "\t", output[1][i], "\t", output[0][i], "\n"
 
-def estimate_alpha(n, m,  h2, p, r2, m_ld_chunk_size, p_threshold, testing = False):
+def r2_experiment(n, m, h2, p, m_ld_chunk_size, p_threshold, filename):
+	with open(filename, 'w') as f:
+		print >>f, 'N \t M \t P \t r2 \t accuracy \t SMT \t PRS \t Pval \t LDinf \t LDpred \t cojo \t cojopred \n'
+		r2 = [0.1 * x for x in range(10)]
+		print r2
+		for j in p:
+			print j
+			for i in r2:
+				validation = genotypes.simulate_genotypes_w_ld(n = 2000 m = m, r2 = i n_samples = 10)
+				for k in range(20):
+					output = test_accuracy(n = n, m = m, n_samples = 10,  genotype = validation,  h2 = 0.5, p = j,
+					 r2 = i, m_ld_chunk_size = 100, p_threshold = 5e-8, alpha = 0.5, verbose = False)
+					print >>f, n, "\t", m, "\t", j, "\t", i, "\t", "\t",output[0],"\t",output[1], "\t", output[2], "\t", output[3], "\t", output[4], "\t", output[5], "\t", output[6], "\n"
+
+def estimate_alpha(n, m,  h2, p, r2, m_ld_chunk_size, p_threshold, testing = False, n_samples = 20):
 	alpha_list = [x*0.05 for x in range(1, 21)]
 	accuracy = []
 	for alpha in alpha_list:
 		print alpha
 		CVaccuracy = []
-		for i in range(15):
+		for i in range(n_samples):
 			betas = simulate_traits_fast(n, m, h2, p)
 
 			training_set = genotypes.simulate_genotypes_w_ld(n = n, m = m, n_samples = 1, m_ld_chunk_size = m_ld_chunk_size, r2 = r2)
@@ -554,7 +569,8 @@ if __name__ == "__main__":
 	p = p + [x*0.2 for x in range(1,6)]
 	N = [1000]
 	M = [2000]
-	alpha_experiment(n = 1000, m = 2000, h2 = 0.5, p = p, r2 = 0.9, m_ld_chunk_size = 100, p_threshold = 5e-8, filename = "alpha_as_a_function_of_p")
+	p = [0.1, 0.2, 0.5, 0.7, 1.0]
+	alpha_experiment(n = 4000, m = 8000, h2 = 0.5, p = p, r2 = 0.9, m_ld_chunk_size = 100, p_threshold = 5e-8, filename = "alpha_as_a_function_of_p", n_samples = 50)
 	# printtable("effectofP_NM0.1", p = p, N = N, M = M, Ntraits = 10)
 	# print "0.1"
 	# N = [3000]
