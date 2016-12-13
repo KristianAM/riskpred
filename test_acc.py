@@ -476,7 +476,7 @@ def r2_experiment(n, m, h2, p, m_ld_chunk_size, p_threshold, filename):
 		for j in p:
 			print j
 			for i in r2:
-				validation = genotypes.simulate_genotypes_w_ld(n = 2000 m = m, r2 = i n_samples = 10)
+				validation = genotypes.simulate_genotypes_w_ld(n = 2000, m = m, r2 = i n_samples = 10)
 				for k in range(20):
 					output = test_accuracy(n = n, m = m, n_samples = 10,  genotype = validation,  h2 = 0.5, p = j,
 					 r2 = i, m_ld_chunk_size = 100, p_threshold = 5e-8, alpha = 0.5, verbose = False)
