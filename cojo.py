@@ -4,7 +4,7 @@ from scipy import stats
 from scipy import linalg
 import phenotypes
 
-def ml_iter(beta_hats, snps, ld_radius=100, h2 = 0.5, p_threshold=0.000001):
+def ml_iter(beta_hats, snps, ld_radius=100, h2 = 0.5, p_threshold=5*10e-8):
     """
     Yang et al. iterative scheme.
     
@@ -19,27 +19,19 @@ def ml_iter(beta_hats, snps, ld_radius=100, h2 = 0.5, p_threshold=0.000001):
 
     """
 
-    Z = snps.shape[0]*beta_hats**2
-    pval = []
-    indices = []
-    non_selected_indices = []
-    for val in Z:
-        pval.append(stats.chi2.sf(val, 1))
-    for j in range(len(pval)):
-        if pval[j] < p_threshold:
-            indices.append(j)
 
+    non_selected_indices = []
+    snps = sp.array(snps)
 
     #Ordering the beta_hats, and storing the order
     m = len(beta_hats)
     beta_hats = beta_hats.tolist()
     ld_table = {}
     for i in range(m):
-        ld_table[i] = {'ld_partners':[i], 'beta_hat_list':[beta_hats[i]], 'D' : sp.array([1.0]), 'D_inv':sp.array([1.0])}
-    snps = sp.array(snps)
+        ld_table[i] = {'ld_partners':[i], 'beta_hat_list':[beta_hats[i]], 'sumsq' : beta_hats[i]**2, 'pval' : 0, 'D' : sp.array([1.0]), 'D_inv':sp.array([1.0])}
+        ld_table[i]['pval'] = stats.chi2.sf((ld_table[i]['beta_hat_list'][0]**2)*snps.shape[0], 1)
     n_test = len(snps[0])
-    snps = sp.array(snps)
-    max_num_selected = len(indices)
+
     selected_indices = set()
     updated_beta_hats = beta_hats[:]
 
@@ -52,11 +44,10 @@ def ml_iter(beta_hats, snps, ld_radius=100, h2 = 0.5, p_threshold=0.000001):
         l.sort(reverse=True)
         for beta_hat, beta_i in l:
             if not beta_i in selected_indices:
-                beta_i_pval = stats.chi2.sf((beta_hat**2)*snps.shape[0], 1)
-                if beta_i_pval <= p_threshold:
+                if ld_table[beta_i]['pval'] <= p_threshold:
                     selected_indices.add(beta_i)
                     break
-                if beta_i_pval > p_threshold:
+                if ld_table[i]['pval'] > p_threshold:
                     stop_boolean = False
                     break
 
@@ -82,9 +73,14 @@ def ml_iter(beta_hats, snps, ld_radius=100, h2 = 0.5, p_threshold=0.000001):
                 ld_table['D'] = D
                 D_inv = linalg.pinv(D)
                 ld_table['D_inv'] = D_inv
-                updated_beta = sp.dot(D_inv[0], bs)
-
-                updated_beta_hats[i] = updated_beta
+                
+                updated_beta = sp.dot(D_inv, bs)
+                sumsq2 = sp.sum(updated_beta**2)
+                added_var_explained = sumsq2 - d['sumsq']
+                d['pval'] = stats.chi2.sf(added_var_explained, 1)
+                print 'pval', ld_table[i]['pval']
+                d['sumsq'] = sumsq2
+                updated_beta_hats[i] = updated_beta[0]
     cojo_updated_beta_hats = updated_beta_hats[:]
     selected_indices = list(selected_indices)
     non_selected_indices = []
@@ -92,21 +88,21 @@ def ml_iter(beta_hats, snps, ld_radius=100, h2 = 0.5, p_threshold=0.000001):
         if not i in selected_indices:
             d = ld_table[i]
             non_selected_indices.append(i)
-
             ld_partners = d['ld_partners'][1:]
+            if len(ld_partners) >= 1:
 
-            Xi= snps[i]
-            Xpartners = snps[ld_partners]
-            upb = sp.array(updated_beta_hats)[ld_partners]
-            Di = sp.dot(Xi, Xpartners.T) / float(n_test)
-            updated_beta_hats[i] = beta_hats[i] - sp.sum(sp.dot(Di, upb))
-            cojo_updated_beta_hats[i] = 0
+                Xi= snps[i]
+                Xpartners = snps[ld_partners]
+                upb = sp.array(updated_beta_hats)[ld_partners]
+                Di = sp.dot(Xi, Xpartners.T) / float(n_test)
+                updated_beta_hats[i] = beta_hats[i] - sp.sum(sp.dot(Di, upb))
+                cojo_updated_beta_hats[i] = 0
 
     #Remove cojosnps
-
-    newX = sp.delete(snps, (selected_indices), axis = 0)
+    snps = sp.array(snps)
+    newX = snps[non_selected_indices]
     assert newX.shape[0] + len(selected_indices) == len(beta_hats)
-    newbetas = [0 if x in selected_indices else x for x in updated_beta_hats]
+    newbetas = sp.array(updated_beta_hats)[non_selected_indices]
 
     m,n = newX.shape
     D = sp.dot(newX, newX.T) / float(n)
@@ -160,23 +156,17 @@ def ml_iter(beta_hats, snps, ld_radius=100, h2 = 0.5, p_threshold=0.000001):
     #     else:
     #         index = non_selected_indices.index(i)
     #         updated_beta_hats_conc[i] = betainf[index]
-    betainf_with_0 =  [0 for x in range(len(beta_hats))]
-    updated_beta_hats_with_0 = [0 for x in range(len(beta_hats))]
-    for i in range(len(beta_hats)):
-        if i in selected_indices:
-            index = selected_indices.index(i)
-            betainf_with_0[i] = 0
-            updated_beta_hats_with_0[i] = updated_beta_hats[index]
-        else:
-            index = non_selected_indices.index(i)
-            betainf_with_0[i] = betainf[index]
-            updated_beta_hats_with_0[i] = 0
+    
+    betainf_with_0 = sp.zeros(len(beta_hats))
+    updated_beta_hats_with_0 = sp.zeros(len(beta_hats))
+    betainf_with_0[non_selected_indices] = betainf
+
+    updated_beta_hats_with_0 = cojo_updated_beta_hats
     cojo_updated_beta_hats = sp.array(cojo_updated_beta_hats)
 
     print len(updated_beta_hats)
     print len(betainf_with_0)
-    return cojo_updated_beta_hats, updated_beta_hats, betainf_with_0, len(selected_indices)
-
+    return cojo_updated_beta_hats, betainf_with_0, len(selected_indices)
 
 if __name__ == "__main__":
-	test = phenotypes.simulate_phenotypes(500, 1000, n_samples = 10, p = 0.3, r2 = 0.9, p_threshold=0.5, h2 = 0.5)
+	test = phenotypes.simulate_phenotypes(200, 1000, n_samples = 2, p = 0.5, r2 = 0.9, h2 = 0.5, alpha = 0.5)

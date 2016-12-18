@@ -273,7 +273,7 @@ def test_accuracy(n, m, n_samples=10, genotype=None, h2=0.5, p=1.0, r2=0.9, m_ld
 		print "estimating alpha"
 	if alpha == None:
 		# Estimate the alpha for the training data that you already had, 
-		alpha = estimate_alpha(n=n, m=m, h2=h2, p=p, r2=r2, m_ld_chunk_size=m_ld_chunk_size, p_threshold=p_threshold)
+		alpha = estimate_alpha(train_set = traingeno, train_phen = train_phen, betas_marg = betas_marg, n=n, m=m, h2=h2, p=p, r2=r2, m_ld_chunk_size=m_ld_chunk_size, p_threshold=p_threshold)
 
 	# simulate validation data or import data
 	if genotype == None:
@@ -466,7 +466,12 @@ def alpha_experiment(n, m, h2, p, r2, m_ld_chunk_size, p_threshold, filename, n_
 		print >> f, 'N \t M \t P \t Alpha, accuracy \n'
 		for j in p:
 			print j
-			output = estimate_alpha(n, m, h2, j, r2, m_ld_chunk_size, p_threshold, testing=True, n_samples=n_samples)
+			training_set = genotypes.simulate_genotypes_w_ld(n=n, m=m, n_samples=1, m_ld_chunk_size=m_ld_chunk_size, r2=r2)
+			traingeno = training_set[0][0]
+			train_phen, train_betas = simulate_phenotypes(genotype=traingeno, n=n, m=m, h2=h2, p=j)
+
+			betas_marg = (1.0 / n) * sp.dot(train_phen, traingeno.T)
+			output = estimate_alpha(traingeno, train_phen, betas_marg, n, m, h2, j, r2, m_ld_chunk_size, p_threshold, testing=True, n_samples=n_samples)
 			for i in range(len(output[1])):
 				print >> f, n, "\t", m, "\t", j, "\t", output[1][i], "\t", output[0][i], "\n"
 
@@ -484,36 +489,20 @@ def r2_experiment(n, m, h2, p, m_ld_chunk_size, p_threshold, filename):
 					 r2=i, m_ld_chunk_size=100, p_threshold=5e-8, alpha=0.5, verbose=False)
 					print >> f, n, "\t", m, "\t", j, "\t", i, "\t", "\t", output[0], "\t", output[1], "\t", output[2], "\t", output[3], "\t", output[4], "\t", output[5], "\t", output[6], "\n"
 
-def estimate_alpha(n, m, h2, p, r2, m_ld_chunk_size, p_threshold, testing=False, n_samples=20):
+def estimate_alpha(train_set, train_phen, betas_marg, n, m, h2, p, r2, m_ld_chunk_size, p_threshold, testing=False, n_samples=20):
 	# Try a smaller set of alphas, e.g. {0.1,0.3,0.5,0.7,0.9}
 	alpha_list = [x * 0.05 for x in range(1, 21)]
+	beta_hats = betas_marg
+	sample_D = sp.dot(train_set, train_set.T) / float(n)
+	cojo_beta_hats, cojo_betainf, n_cojo_selected_indices = ml_iter(betas_marg, train_set, ld_radius=m_ld_chunk_size, h2=h2, p_threshold=p_threshold)
+
+	cojopred_beta_hats = cojo_beta_hats[:]
+
 	accuracy = []
 	for alpha in alpha_list:
 		print alpha
 		CVaccuracy = []
 		for i in range(n_samples):
-			betas = simulate_traits_fast(n, m, h2, p)
-
-			training_set = genotypes.simulate_genotypes_w_ld(n=n, m=m, n_samples=1, m_ld_chunk_size=m_ld_chunk_size, r2=r2)
-			traingeno = training_set[0][0]
-			sample_D = training_set[1][0]
-			# estimate marginal beta hats
-			phen_noise = stats.norm.rvs(0, sp.sqrt(1.0 - h2), size=n) 
-			phen_noise = sp.sqrt((1.0 - h2) / sp.var(phen_noise)) * phen_noise
-			genetic_part = sp.dot(traingeno.T, betas)
-			genetic_part = sp.sqrt(h2 / sp.var(genetic_part)) * genetic_part
-			train_phen = genetic_part + phen_noise
-			train_phen = (1 / sp.std(train_phen)) * train_phen	
-			betas_marg = (1.0 / n) * sp.dot(train_phen, traingeno.T)
-
-			beta_hats = betas_marg
-			sample_D = sp.dot(traingeno, traingeno.T) / float(n)
-
-			cojo_beta_hats, cojo_betainf, n_cojo_selected_indices = ml_iter(betas_marg, traingeno, ld_radius=m_ld_chunk_size, h2=h2, p_threshold=p_threshold)
-
-			cojopred_beta_hats = cojo_beta_hats[:]
-
-
 			sample = genotypes.simulate_genotypes_w_ld(n=n, m=m, n_samples=10, m_ld_chunk_size=m_ld_chunk_size, r2=r2)
 			geno = sample[0][0]
 

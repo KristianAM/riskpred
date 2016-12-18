@@ -70,88 +70,109 @@ def simulate_traits_fast(n, m, h2 = 0.5, p = 1.0):
 
 	return betas
 
-def estimate_alpha(n = 500, m = None,  h2 = 0.5, p = 1.0, r2 = 0.9, m_ld_chunk_size = 100, p_threshold = 0.05):
+def LDinf(beta_hats, ld_radius, D, n):
+	m = len(beta_hats)
+    for m_i in range(0,m, ld_radius):
+    #calculate the ld corrected betaHats under the infinitesimal model
+    	m_end = min(m_i + ld_radius, m)
+    	A = ((m/h2) * sp.eye(min(ld_radius, m_end-m_i)) + (n/(1)) * D[m_i:m_end, m_i:m_end])
+    	try:
+        	Ainv = linalg.pinv(A)
+    	except Exception(err_str):
+        	print err_str
+        	print linalg.pinv(D)
+    	betainf[m_i:m_end] = sp.dot(Ainv * n, newbetas[m_i:m_end])
+
+def estimate_alpha(n = 500, m = None,  h2 = 0.5, p = 1.0, r2 = 0.9, m_ld_chunk_size = 100, p_threshold = 0.00000005):
 	alpha_list = [x*0.05 for x in range(1, 21)]
 	accuracy = []
 	for alpha in alpha_list:
-		betas = simulate_traits_fast(n, m, h2, p)
-		training_set = genotypes.simulate_genotypes_w_ld(n = n, m = m, n_samples = 1, m_ld_chunk_size = m_ld_chunk_size, r2 = r2)
-		traingeno = training_set[0][0]
-		sample_D = training_set[1][0]
-		#estimate marginal beta hats
-		phen_noise = stats.norm.rvs(0, sp.sqrt(1.0 - h2), size=n) 
-		phen_noise = sp.sqrt((1.0 - h2) / sp.var(phen_noise)) * phen_noise
-		genetic_part = sp.dot(traingeno.T, betas)
-		genetic_part = sp.sqrt(h2 / sp.var(genetic_part)) * genetic_part
-		train_phen = genetic_part + phen_noise
-		betas_marg = (1.0 / n) * sp.dot(train_phen, traingeno.T)
-		noises = stats.norm.rvs(0,1,size=m)
-		betainf = sp.zeros(m)
-		if r2 == 0:
-			beta_hats = betas + sp.sqrt(1.0/n) * noises
-		else:
-			#if ld
-			C = sp.sqrt(((1.0)/n))*linalg.cholesky(sample_D)
-			D_I = linalg.pinv(sample_D)
-			betas_ld = sp.zeros(m)
-			noises_ld = sp.zeros(m)
-			for m_i in range(0,m,m_ld_chunk_size):
-				m_end = m_i+m_ld_chunk_size
-				betas_ld[m_i:m_end] = sp.dot(sample_D,betas[m_i:m_end])
-				noises_ld[m_i:m_end]  = sp.dot(C.T,noises[m_i:m_end])
-			beta_hats = betas_ld + noises_ld
-			for m_i in range(0,m, m_ld_chunk_size):
+		CVaccuracy = []
+		for i in range(2):
+			betas = simulate_traits_fast(n, m, h2, p)
 
-				#calculate the ld corrected betaHats under the infinitesimal model
-				m_end = m_i + m_ld_chunk_size
-				A = ((m/h2) * sp.eye(m_ld_chunk_size) + (n/(1)) * sample_D)
-				Ainv = linalg.pinv(A)
-				betainf[m_i:m_end] = sp.dot(Ainv * n, beta_hats[m_i:m_end])
+			training_set = genotypes.simulate_genotypes_w_ld(n = n, m = m, n_samples = 1, m_ld_chunk_size = m_ld_chunk_size, r2 = r2)
+			traingeno = training_set[0][0]
+			sample_D = training_set[1][0]
+			#estimate marginal beta hats
+			phen_noise = stats.norm.rvs(0, sp.sqrt(1.0 - h2), size=n) 
+			phen_noise = sp.sqrt((1.0 - h2) / sp.var(phen_noise)) * phen_noise
+			genetic_part = sp.dot(traingeno.T, betas)
+			genetic_part = sp.sqrt(h2 / sp.var(genetic_part)) * genetic_part
+			train_phen = genetic_part + phen_noise
+			train_phen = (1/sp.std(train_phen)) * train_phen	
+			betas_marg = (1.0 / n) * sp.dot(train_phen, traingeno.T)
+			betainf = sp.zeros(m)
+			if r2 == 0:
+				beta_hats = betas + sp.sqrt(1.0/n) * noises
+			else:
+				#if ld
+				C = sp.sqrt(((1.0)/n))*linalg.cholesky(sample_D)
+				D_I = linalg.pinv(sample_D)
+				betas_ld = sp.zeros(m)
+				noises_ld = sp.zeros(m)
+				for m_i in range(0,m,m_ld_chunk_size):
+					m_end = m_i+m_ld_chunk_size
+					betas_ld[m_i:m_end] = sp.dot(sample_D,betas[m_i:m_end])
+					noises_ld[m_i:m_end]  = sp.dot(C.T,noises[m_i:m_end])
+				beta_hats = betas_ld + noises_ld
+				for m_i in range(0,m, m_ld_chunk_size):
 
-			ldDict = get_LDpred_ld_tables(traingeno, ld_radius=m_ld_chunk_size, h2=h2, n_training=n)
-			betaLD = LDpred.ldpred_gibbs(beta_hats, start_betas = betainf, n = n, ld_radius = m_ld_chunk_size, p = p, ld_dict = ldDict["ld_dict"], h2 = h2)
-		cojo_beta_hats, cojopred_beta_hats, cojo_betainf, n_cojo_selected_indices = cojo.ml_iter(betas_marg, traingeno, ld_radius= m_ld_chunk_size, h2 = h2, p_threshold= p_threshold)
+					#calculate the ld corrected betaHats under the infinitesimal model
+					m_end = m_i + m_ld_chunk_size
+					A = ((m/h2) * sp.eye(m_ld_chunk_size) + (n/(1)) * sample_D)
+					Ainv = linalg.pinv(A)
+					betainf[m_i:m_end] = sp.dot(Ainv * n, beta_hats[m_i:m_end])
 
-		cojopred_beta_hats = cojo_beta_hats[:]
+				ldDict = get_LDpred_ld_tables(traingeno, ld_radius=m_ld_chunk_size, h2=h2, n_training=n)
+				betaLD = LDpred.ldpred_gibbs(beta_hats, start_betas = betainf, n = n, ld_radius = m_ld_chunk_size, p = p, ld_dict = ldDict["ld_dict"], h2 = h2)
+			cojo_beta_hats, cojo_betainf, n_cojo_selected_indices = cojo.ml_iter(betas_marg, traingeno, ld_radius= m_ld_chunk_size, h2 = h2, p_threshold= p_threshold)
 
-
-		sample = genotypes.simulate_genotypes_w_ld(n = n, m = m, n_samples = 1, m_ld_chunk_size = m_ld_chunk_size, r2 = r2)
-		geno = sample[0][0]
-
-		Yhatscojopred = sp.dot(geno.T, cojo_beta_hats)
-		Yhatscojopred_betainf = (sp.dot(geno.T, cojo_betainf))
-		"""
-		Post normalization of Y hat values
-		"""
-
-		Yhatscojopred = (Yhatscojopred / sp.var(Yhatscojopred)) / max(1, n_cojo_selected_indices)
-
-		Yhatscojopred_betainf = (Yhatscojopred_betainf / sp.var(Yhatscojopred_betainf)) / (m - n_cojo_selected_indices)
-		Yhatscojopred_concatenated = (Yhatscojopred*alpha) + (Yhatscojopred_betainf * (1-alpha))
+			cojopred_beta_hats = cojo_beta_hats[:]
 
 
+			sample = genotypes.simulate_genotypes_w_ld(n = n, m = m, n_samples = 1, m_ld_chunk_size = m_ld_chunk_size, r2 = r2)
+			geno = sample[0][0]
 
+			Yhatscojopred = sp.dot(geno.T, cojo_beta_hats)
+			Yhatscojopred_betainf = (sp.dot(geno.T, cojo_betainf))
+			print n_cojo_selected_indices
 
+			"""
+			Post normalization of Y hat values
+			"""
+			if n_cojo_selected_indices == 0:
+				Yhatscojopred = sp.array([0])
+			else:
+				Yhatscojopred = (Yhatscojopred / sp.var(Yhatscojopred)) / max(1, n_cojo_selected_indices)
 
-		validation_phen_noise =  stats.norm.rvs(0, sp.sqrt(1.0 - h2), size= n)
-		validation_phen_noise = sp.sqrt((1.0 - h2) / sp.var(validation_phen_noise)) * validation_phen_noise
-
-		validation_genetic_part = sp.dot(geno.T, betas)
-		validation_genetic_part = sp.sqrt(h2 / sp.var(validation_genetic_part)) * validation_genetic_part
-
-		validation_phen = validation_genetic_part + validation_phen_noise
+			Yhatscojopred_betainf = (Yhatscojopred_betainf / sp.var(Yhatscojopred_betainf)) / (m - n_cojo_selected_indices)
+			Yhatscojopred_concatenated = (Yhatscojopred*alpha) + (Yhatscojopred_betainf * (1-alpha))
 
 
 
-		accuracy.append(stats.pearsonr(validation_phen, Yhatscojopred_concatenated)[0]**2)
 
+
+			validation_phen_noise =  stats.norm.rvs(0, sp.sqrt(1.0 - h2), size= n)
+			validation_phen_noise = sp.sqrt((1.0 - h2) / sp.var(validation_phen_noise)) * validation_phen_noise
+
+			validation_genetic_part = sp.dot(geno.T, betas)
+			validation_genetic_part = sp.sqrt(h2 / sp.var(validation_genetic_part)) * validation_genetic_part
+
+			validation_phen = validation_genetic_part + validation_phen_noise
+
+
+
+			CVaccuracy.append(stats.pearsonr(validation_phen, Yhatscojopred_concatenated)[0]**2)
+		accuracy.append(sp.mean(CVaccuracy))
 	best_accuracy_index = accuracy.index(max(accuracy))
 	best_alpha = alpha_list[best_accuracy_index]
 	print "acc list", accuracy
 	print "best alpha : ", best_alpha
 	print "accuracy : ", max(accuracy)
 	return best_alpha
-def simulate_phenotypes(n, m, n_samples = 10,  genotype = None,  h2 = 0.5, p = 1.0, r2 = 0.9, m_ld_chunk_size = 100, p_threshold = 0.05, validation_set = None, alpha = None):
+
+def simulate_phenotypes(n, m, n_samples = 10,  genotype = None,  h2 = 0.5, p = 1.0, r2 = 0.9, m_ld_chunk_size = 100, p_threshold = 5*10e-5000, validation_set = None, alpha = None):
 	#Simulate true betas
 	betas = simulate_traits_fast(n, m, h2, p)
 
@@ -164,10 +185,11 @@ def simulate_phenotypes(n, m, n_samples = 10,  genotype = None,  h2 = 0.5, p = 1
 	genetic_part = sp.dot(traingeno.T, betas)
 	genetic_part = sp.sqrt(h2 / sp.var(genetic_part)) * genetic_part
 	train_phen = genetic_part + phen_noise
+	train_phen = (1/sp.std(train_phen)) * train_phen	
 	betas_marg = (1.0 / n) * sp.dot(train_phen, traingeno.T)
 	#simulate validation data or use existing data
 	if alpha == None:
-		alpha = estimate_alpha(n = 500, m = m,  h2 = 0.5, p = 1.0, r2 = 0.9, m_ld_chunk_size = 100, p_threshold = 0.05)
+		alpha = estimate_alpha(n = n, m = m,  h2 = 0.5, p = 1.0, r2 = 0.9, m_ld_chunk_size = 100, p_threshold = p_threshold)
 
 	if genotype == None:
 		if r2 == 0:
@@ -200,7 +222,6 @@ def simulate_phenotypes(n, m, n_samples = 10,  genotype = None,  h2 = 0.5, p = 1
 	val_accuracy_LDpred = []
 	val_accuracy_cojo = []
 	val_accuracy_cojopred = []
-
 	#Simulate effect sizes
 	noises = stats.norm.rvs(0,1,size=m)
 	betainf = sp.zeros(m)
@@ -217,6 +238,9 @@ def simulate_phenotypes(n, m, n_samples = 10,  genotype = None,  h2 = 0.5, p = 1
 			betas_ld[m_i:m_end] = sp.dot(sample_D,betas[m_i:m_end])
 			noises_ld[m_i:m_end]  = sp.dot(C.T,noises[m_i:m_end])
 		beta_hats = betas_ld + noises_ld
+
+		beta_hats = betas_marg
+
 		for m_i in range(0,m, m_ld_chunk_size):
 
 			#calculate the ld corrected betaHats under the infinitesimal model
@@ -230,8 +254,8 @@ def simulate_phenotypes(n, m, n_samples = 10,  genotype = None,  h2 = 0.5, p = 1
 		
 
 	#estimate cojo corrected beta_hats
-	cojo_beta_hats, cojopred_beta_hats, cojo_betainf, n_cojo_selected_indices = cojo.ml_iter(betas_marg, traingeno, ld_radius= m_ld_chunk_size, h2 = h2, p_threshold= p_threshold)
-
+	cojo_beta_hats, cojo_betainf, n_cojo_selected_indices = cojo.ml_iter(betas_marg, traingeno, ld_radius= m_ld_chunk_size, h2 = h2, p_threshold= p_threshold)
+	print n_cojo_selected_indices
 	cojopred_beta_hats = cojo_beta_hats[:]
 	#apply shrink of cojo betainf estimates
 
@@ -320,18 +344,22 @@ def simulate_phenotypes(n, m, n_samples = 10,  genotype = None,  h2 = 0.5, p = 1
 
 		Yhatscojopred.append(sp.dot(geno[i].T, cojo_beta_hats))
 		Yhatscojopred_betainf.append(sp.dot(geno[i].T, cojo_betainf))
+
 		"""
 		Post normalization of Y hat values
 		"""
 
-		Yhatscojopred[i] = (Yhatscojopred[i] / sp.var(Yhatscojopred[i])) / max(1, n_cojo_selected_indices)
+		if n_cojo_selected_indices > 0:
+			Yhatscojopred[i] = (Yhatscojopred[i] / sp.var(Yhatscojopred[i]))
 
-		Yhatscojopred_betainf[i] = (Yhatscojopred_betainf[i] / sp.var(Yhatscojopred_betainf[i])) / (m - n_cojo_selected_indices)
+			Yhatscojopred_betainf[i] = (Yhatscojopred_betainf[i] / sp.var(Yhatscojopred_betainf[i]))
 
-		Yhatscojopred_concatenated.append((Yhatscojopred[i]*alpha) + (Yhatscojopred_betainf[i] * (1-alpha)))
-		
+			Yhatscojopred_concatenated.append((sp.array(Yhatscojopred[i])*alpha) + (sp.array(Yhatscojopred_betainf[i]) * (1.0-alpha)))
+		else:
+			Yhatscojopred_concatenated.append(sp.array(Yhatscojopred[i]) + sp.array(Yhatscojopred_betainf[i]))
 		val_accuracy_cojopred.append(stats.pearsonr(validation_phen, Yhatscojopred_concatenated[i])[0]**2)
-		print n_cojo_selected_indices
+		if n_cojo_selected_indices == 0:
+			assert Yhatscojopred_concatenated[i].any() == Yhatsinf[i].any()
 	accSMT = sp.mean(val_accuracy_SMT)
 	accPRS = sp.mean(val_accuracy_PRS)
 	accPval = sp.mean(val_accuracy_Pval)
@@ -342,8 +370,8 @@ def simulate_phenotypes(n, m, n_samples = 10,  genotype = None,  h2 = 0.5, p = 1
 	else:
 		acccojo = None
 	acccojopred = sp.mean(val_accuracy_cojopred)
-
-	return  accSMT, accPRS, accPval, accinf, accLDpred, acccojo, acccojopred, val_accuracy_cojopred
+	assert 1 < 0
+	return  accSMT, accPRS, accPval, accinf, accLDpred, acccojo, acccojopred
 
 def printtable(filename, p, N, M, Ntraits, validationN = 5):
 	with open(filename, 'w') as f:
@@ -358,7 +386,7 @@ def printtable(filename, p, N, M, Ntraits, validationN = 5):
 				for j in p:
 					print j
 					for l in range(Ntraits):
-						output = simulate_phenotypes(N[i], M[m], genotype = validation, n_samples = validationN,  h2 = 0.5, p = j, r2 = 0.9, m_ld_chunk_size = 100, p_threshold = 0.000001)
+						output = simulate_phenotypes(N[i], M[m], genotype = validation, n_samples = validationN,  h2 = 0.5, p = j, r2 = 0.9, m_ld_chunk_size = 100)
 
 						print >>f, N[i],"\t",M[m],"\t",j,"\t",output[0],"\t",output[1], "\t", output[2], "\t", output[3], "\t", output[4], "\t", output[5], "\t", output[6], "\n"
 if __name__ == "__main__":
