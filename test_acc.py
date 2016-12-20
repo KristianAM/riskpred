@@ -483,9 +483,9 @@ def r2_experiment(n, m, h2, p, m_ld_chunk_size, p_threshold, filename):
 		for j in p:
 			print j
 			for i in r2:
-				validation = genotypes.simulate_genotypes_w_ld(n=2000, m=m, r2=i, n_samples=10)
+				validation = genotypes.simulate_genotypes_w_ld(n=2000, m=m, r2=i, n_samples=40)
 				for k in range(20):
-					output = test_accuracy(n=n, m=m, n_samples=10, genotype=validation, h2=0.5, p=j,
+					output = test_accuracy(n=n, m=m, n_samples=40, genotype=validation, h2=0.5, p=j,
 					 r2=i, m_ld_chunk_size=100, p_threshold=5e-8, alpha=0.5, verbose=False)
 					print >> f, n, "\t", m, "\t", j, "\t", i, "\t", "\t", output[0], "\t", output[1], "\t", output[2], "\t", output[3], "\t", output[4], "\t", output[5], "\t", output[6], "\n"
 
@@ -555,14 +555,15 @@ if __name__ == "__main__":
 	# 	test.append(test_accuracy(n = 1000, m = 2000, n_samples = 5,  genotype = None,  h2 = 0.5, p = 0.03, r2 = 0.9, m_ld_chunk_size = 100, p_threshold = 5e-8, validation_set = None, alpha = 0.5, verbose = True))
 
 	# t = map(list,zip(*test))
-	p = [x * 0.0002 for x in range(1, 11)]
-	p = p + [x * 0.001 for x in range(2, 11)]
-	p = p + [x * 0.01 for x in range(2, 11)]
-	p = p + [x * 0.2 for x in range(1, 6)]
+	#p = [x * 0.0002 for x in range(1, 11)]
+	#p = p + [x * 0.001 for x in range(2, 11)]
+	#p = p + [x * 0.01 for x in range(2, 11)]
+	#p = p + [x * 0.2 for x in range(1, 6)]
 	N = [1000]
 	M = [2000]
 	p = [0.1, 0.2, 0.5, 0.7, 1.0]
-	alpha_experiment(n=4000, m=8000, h2=0.5, p=p, r2=0.9, m_ld_chunk_size=100, p_threshold=5e-8, filename="alpha_as_a_function_of_p", n_samples=50)
+	#alpha_experiment(n=4000, m=8000, h2=0.5, p=p, r2=0.9, m_ld_chunk_size=100, p_threshold=5e-8, filename="alpha_as_a_function_of_p", n_samples=50)
+	r2_experiment(n = 4000, m = 8000, h2 = 0.5, p = p, m_ld_chunk_size = 100, p_threshold = 5e-8, filename = "r2_and_acc.c")
 	# printtable("effectofP_NM0.1", p = p, N = N, M = M, Ntraits = 10)
 	# print "0.1"
 	# N = [3000]
