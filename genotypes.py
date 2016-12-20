@@ -2,10 +2,10 @@ import scipy as sp
 from scipy import stats
 
 def get_sample_D(n, m, num_sim, r2=0.9):
-    D_avg = sp.zeros((m, m), dtype='single')
+    D_avg = sp.zeros((m, m), dtype='float32')
     for sim_i in range(num_sim):
         # Generating correlated training genotypes
-        X = sp.empty((m, n), dtype='single')
+        X = sp.empty((m, n), dtype='float32')
         X[0] = stats.norm.rvs(size=n)        
         for j in range(1, m):
             X[j] = sp.sqrt(r2) * X[j - 1] + sp.sqrt(1 - r2) * stats.norm.rvs(size=n)
@@ -38,13 +38,13 @@ def simulate_genotypes_w_ld(n, m, n_samples, m_ld_chunk_size=100, r2=0.9):
 	val_set_gen = []
 	val_set_D = []
 	for i in xrange(n_samples):
-		snps = sp.zeros((m, n), dtype='single')
+		snps = sp.zeros((m, n), dtype='float32')
 		num_chunks = m / m_ld_chunk_size
 		for chunk in xrange(num_chunks):
-			X = sp.empty((m_ld_chunk_size, n), dtype='single')
+			X = sp.zeros((m_ld_chunk_size, n), dtype='float32')
 			X[0] = stats.norm.rvs(size=n)
 			for j in xrange(1, m_ld_chunk_size):
-				X[j] = sp.sqrt(r2) * X[j - i] + (1 - sp.sqrt(r2)) * stats.norm.rvs(size=n)
+				X[j] = sp.sqrt(r2) * X[j - 1] + sp.sqrt(1 - r2) * stats.norm.rvs(size=n)
 			start_i = chunk * m_ld_chunk_size
 			stop_i = start_i + m_ld_chunk_size
 			snps[start_i:stop_i] = X

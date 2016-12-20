@@ -89,7 +89,7 @@ def LDinf(beta_hats, ld_radius, LD_matrix, n, h2):
 
 
 def ml_iter(beta_hats, snps, ld_radius, h2, p_threshold):
-
+	print "cojo pthreshold", p_threshold
 	non_selected_indices = []
 	snps = sp.array(snps)
 
@@ -105,20 +105,21 @@ def ml_iter(beta_hats, snps, ld_radius, h2, p_threshold):
 
 	selected_indices = set()
 	updated_beta_hats = beta_hats[:]
+	updated_pvalues = [ld_table[i]['pval'] for i in range(m)]
 
 	is_not_finished = True
 	while is_not_finished:
 
 		# Sort and select beta
-		l = zip((sp.array(updated_beta_hats) ** 2).tolist(), range(m))
-		l.sort(reverse=True)
-		for beta_hat, beta_i in l:
+		l = zip(updated_pvalues, range(m))
+		l.sort()
+		for pvalue, beta_i in l:
 			if not beta_i in selected_indices:
-				if ld_table[beta_i]['pval'] <= p_threshold:
+				if pvalue <= p_threshold:
 					selected_indices.add(beta_i)
 					break
 
-				if ld_table[i]['pval'] > p_threshold:
+				else:
 					is_not_finished = False
 					break
 
@@ -136,6 +137,8 @@ def ml_iter(beta_hats, snps, ld_radius, h2, p_threshold):
 					beta_hat_list = d['beta_hat_list']
 					ld_partners.append(beta_i)
 					beta_hat_list.append(beta_hats[beta_i])
+					#print "ldpartners2", ld_partners
+					#print "betahatlist", beta_hat_list
 					bs = sp.array(beta_hat_list, dtype='single')
 					X = snps[ld_partners]
 					D = sp.dot(X, X.T) / float(n_test)
@@ -145,6 +148,9 @@ def ml_iter(beta_hats, snps, ld_radius, h2, p_threshold):
 					
 					updated_beta = sp.dot(D_inv, bs)
 					sumsq2 = sp.sum(updated_beta ** 2)
+					#print "updated beta", updated_beta
+					#print "sumsq", d['sumsq']
+					#print "sumsq2", sumsq2
 					added_var_explained = sumsq2 - d['sumsq']
 					# Is the added variance explained usually (always) larger than 0.  Perhaps a graph? 
 					# How good is this approximation?
@@ -152,6 +158,7 @@ def ml_iter(beta_hats, snps, ld_radius, h2, p_threshold):
 					d['pval'] = stats.chi2.sf(added_var_explained, 1)
 					d['sumsq'] = sumsq2
 					updated_beta_hats[i] = updated_beta[0]
+					updated_pvalues[i] = d['pval']
 
 	cojo_updated_beta_hats = updated_beta_hats[:]
 	selected_indices = list(selected_indices)
@@ -308,7 +315,7 @@ def test_accuracy(n, m, n_samples=10, genotype=None, h2=0.5, p=1.0, r2=0.9, m_ld
 	val_accuracy_LDpred = []
 	val_accuracy_cojo = []
 	val_accuracy_cojopred = []
-
+	val_accuracy_cojopred2 = []
 
 
 	# beta_hats = simulate_beta_hats(true_betas = train_betas, n = n, m = m, r2 = r2, LD_matrix = sample_D, m_ld_chunk_size = m_ld_chunk_size)
@@ -342,6 +349,7 @@ def test_accuracy(n, m, n_samples=10, genotype=None, h2=0.5, p=1.0, r2=0.9, m_ld
 		for j in range(len(pval)):
 			if pval[j] < p_threshold:
 				indices.append(j)
+
 		beta_hatsPruned = beta_hats[indices]
 	else:
 		beta_hatsPruned = beta_hats
@@ -415,7 +423,7 @@ def test_accuracy(n, m, n_samples=10, genotype=None, h2=0.5, p=1.0, r2=0.9, m_ld
 
 		Yhatscojopred.append(sp.dot(geno[i].T, cojo_beta_hats))
 		Yhatscojopred_betainf.append(sp.dot(geno[i].T, cojo_betainf))
-
+		val_accuracy_cojopred2.append(stats.pearsonr(sp.dot(geno[i].T, cojo_beta_hats)*alpha + sp.dot(geno[i].T, betainf) * (1-alpha), validation_phen))
 		"""
 		Post normalization of Y hat values
 		"""
@@ -436,13 +444,13 @@ def test_accuracy(n, m, n_samples=10, genotype=None, h2=0.5, p=1.0, r2=0.9, m_ld
 	accPval = sp.mean(val_accuracy_Pval)
 	accinf = sp.mean(val_accuracy_inf)
 	accLDpred = sp.mean(val_accuracy_LDpred)
-
+	acccojopred2 = sp.mean(val_accuracy_cojopred2)
 	if len(val_accuracy_cojo) != 0:
 		acccojo = sp.mean(val_accuracy_cojo)
 	else:
 		acccojo = None
 	acccojopred = sp.mean(val_accuracy_cojopred)
-	return  accSMT, accPRS, accPval, accinf, accLDpred, acccojo, acccojopred, n_cojo_selected_indices
+	return  accSMT, accPRS, accPval, accinf, accLDpred, acccojo, acccojopred, acccojopred2, n_cojo_selected_indices
 
 def printtable(filename, p, N, M, Ntraits, validationN=5):
 	with open(filename, 'w') as f:
@@ -546,7 +554,58 @@ def estimate_alpha(train_set, train_phen, betas_marg, train_betas, n, m, h2, p, 
 	print "accuracy : ", max(accuracy)
 	return best_alpha
 
+def beta_experiment(n = 4000, m = 8000, p = [0.0001, 0.5, 1.0], normalized = False):
+	"""
+	sim a phenotype and inspect how the different beta estimates fluctuate around each other
+	"""
+	true_betas = []
+	marginal_betas = []
+	pval_betas = []
+	LDpred_betas = []
+	LDinf_betas = []
+	cojo_betas = []
+	cojopred_betas = []
+	for i in p:
+		training_set = genotypes.simulate_genotypes_w_ld(n=n, m=m, n_samples=1, m_ld_chunk_size= 100, r2=0.9)
+		traingeno = training_set[0][0]
+		sample_D = training_set[1][0]
+		train_phen, train_betas = simulate_phenotypes(genotype=traingeno, n=n, m=m, h2=0.5, p= i)
+		betas_marg = (1.0 / n) * sp.dot(train_phen, traingeno.T)
+	
 
+		beta_hats = betas_marg
+		sample_D = sp.dot(traingeno, traingeno.T) / float(n)
+		betainf = LDinf(beta_hats=beta_hats, ld_radius=100, LD_matrix=sample_D, n=n, h2=0.5)
+		ldDict = get_LDpred_ld_tables(traingeno, ld_radius= 100, h2= 0.5, n_training= n)
+		betaLD = LDpred.ldpred_gibbs(beta_hats, start_betas=betainf, n=n, ld_radius= 100, p= i, ld_dict=ldDict["ld_dict"], h2=0.5)
+		cojo_beta_hats, cojo_betainf, n_cojo_selected_indices = ml_iter(beta_hats, traingeno, ld_radius= 100, h2=0.5, p_threshold=5e-8)
+		Z = n * (beta_hats ** 2)
+		pval = []
+		indices = []
+		beta_hatsPruned = sp.zeros(m)
+		for val in Z:
+			pval.append(stats.chi2.sf(val, 1))
+		for j in range(len(pval)):
+			if pval[j] < 5e-8:
+				indices.append(j)
+		beta_hatsPruned[indices] = beta_hats[indices]
+
+		if normalized:
+			betas_marg = betas_marg - train_betas
+			beta_hatsPruned = beta_hatsPruned - train_betas
+			betaLD['betas'] = betaLD['betas'] - train_betas
+			betainf = betainf - train_betas
+			cojo_beta_hats = cojo_beta_hats - train_betas
+			cojo_betainf = cojo_betainf - train_betas
+		true_betas.append(train_betas)
+		marginal_betas.append(betas_marg)
+		pval_betas.append(beta_hatsPruned)
+		LDpred_betas.append(betaLD['betas'])
+		LDinf_betas.append(betainf)
+		cojo_betas.append(cojo_beta_hats)
+		cojopred_betas.append(cojo_betainf)
+
+	return true_betas, marginal_betas, pval_betas, LDpred_betas, LDinf_betas, cojo_betas, cojopred_betas
 
 if __name__ == "__main__":
 	""
@@ -559,11 +618,11 @@ if __name__ == "__main__":
 	#p = p + [x * 0.001 for x in range(2, 11)]
 	#p = p + [x * 0.01 for x in range(2, 11)]
 	#p = p + [x * 0.2 for x in range(1, 6)]
-	N = [1000]
-	M = [2000]
-	p = [0.1, 0.2, 0.5, 0.7, 1.0]
+	#N = [1000]
+	#M = [2000]
+	#p = [0.1, 0.2, 0.5, 0.7, 1.0]
 	#alpha_experiment(n=4000, m=8000, h2=0.5, p=p, r2=0.9, m_ld_chunk_size=100, p_threshold=5e-8, filename="alpha_as_a_function_of_p", n_samples=50)
-	r2_experiment(n = 4000, m = 8000, h2 = 0.5, p = p, m_ld_chunk_size = 100, p_threshold = 5e-8, filename = "r2_and_acc.c")
+	#r2_experiment(n = 200, m = 400, h2 = 0.5, p = p, m_ld_chunk_size = 100, p_threshold = 5e-8, filename = "r2_and_acc.csv")
 	# printtable("effectofP_NM0.1", p = p, N = N, M = M, Ntraits = 10)
 	# print "0.1"
 	# N = [3000]
