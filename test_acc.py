@@ -466,7 +466,7 @@ def printtable(filename, p, N, M, Ntraits, validationN=5):
 					print j
 					for l in range(Ntraits):
 						output = test_accuracy(N[i], M[m], n_samples=validationN, genotype=validation, h2=0.5, p=j,
-						 r2=0.9, m_ld_chunk_size=100, p_threshold=5e-8, validation_set=None, alpha=None, verbose=False)
+						 r2=0.9, m_ld_chunk_size=100, p_threshold=5e-8, validation_set=None, alpha=0.5, verbose=False)
 						print >> f, N[i], "\t", M[m], "\t", j, "\t", output[0], "\t", output[1], "\t", output[2], "\t", output[3], "\t", output[4], "\t", output[5], "\t", output[6], "\n"
 
 def alpha_experiment(n, m, h2, p, r2, m_ld_chunk_size, p_threshold, filename, n_samples=100):
@@ -618,13 +618,14 @@ if __name__ == "__main__":
 	#p = p + [x * 0.001 for x in range(2, 11)]
 	#p = p + [x * 0.01 for x in range(2, 11)]
 	#p = p + [x * 0.2 for x in range(1, 6)]
-	#N = [1000]
-	#M = [2000]
+	N = [1000]
+	M = [2000]
 	#p = [0.1, 0.2, 0.5, 0.7, 1.0]
 	#alpha_experiment(n=4000, m=8000, h2=0.5, p=p, r2=0.9, m_ld_chunk_size=100, p_threshold=5e-8, filename="alpha_as_a_function_of_p", n_samples=50)
 	#r2_experiment(n = 200, m = 400, h2 = 0.5, p = p, m_ld_chunk_size = 100, p_threshold = 5e-8, filename = "r2_and_acc.csv")
-	# printtable("effectofP_NM0.1", p = p, N = N, M = M, Ntraits = 10)
-	# print "0.1"
+	p = [0.0001, 0.001, 0.01, 0.1, 1]
+	 printtable("effectofP_NM0.1", p = p, N = N, M = M, Ntraits = 10)
+	 print "0.1"
 	# N = [3000]
 	# printtable("effectofP_NM0.5", p = p, N = N, M = M, Ntraits = 10)
 	# print "0.5"
