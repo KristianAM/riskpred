@@ -69,23 +69,3 @@ def simulate_genotypes_w_ld(n, m, n_samples, m_ld_chunk_size=100, r2=0.9, valida
 def write_genotypes(filename, genotype):
 	sp.savetxt(filename + ".geno.txt", genotype[0])
 	sp.savetxt(filename + ".D.txt", genotype[1])
-
-def printtable(filename, p, N, M, Ntraits, validation_size=1000, validationN=10):
-	with open(filename, 'w') as f:
-		print >> f, 'N \t M \t P \t SMT \t PRS \n'
-		for i in range(len(N)):
-			print "N"
-			print N[i]
-			for m in range(len(M)):
-				print "M"
-				print M[m]
-				validation = simulate_genotypes(n=validation_size, m=M[m], n_samples=validationN)
-				for j in p:
-					print j
-					output = simulate_phenotypes_fast(validation, n=N[i], m=M[m], num_traits=n_traits, p=j)
-					for l in range(n_traits):
-						print >> f, N[i], "\t", M[m], "\t", j, "\t", output[0][l], "\t", output[1][l], "\n"
-
-
-if __name__ == "__main__":
-	""
