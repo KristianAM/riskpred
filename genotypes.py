@@ -34,7 +34,7 @@ def simulate_genotypes(n, m, n_samples):
 		val_set.append(snps)
 	return val_set
 
-def simulate_genotypes_w_ld(n, m, n_samples, m_ld_chunk_size=100, r2=0.9):
+def simulate_genotypes_w_ld(n, m, n_samples, m_ld_chunk_size=100, r2=0.9, validation = False):
 	val_set_gen = []
 	val_set_D = []
 	for i in xrange(n_samples):
@@ -54,7 +54,10 @@ def simulate_genotypes_w_ld(n, m, n_samples, m_ld_chunk_size=100, r2=0.9):
 		snps_stds.shape = (m, 1)
 		snps = (snps - snps_means) / snps_stds
 		val_set_gen.append(snps)
-		val_set_D.append(get_sample_D(n=n, m=m_ld_chunk_size, num_sim=100, r2=r2))
+		if validation:
+			val_set_D = 0
+		else:
+			val_set_D.append(get_sample_D(n=n, m=m, num_sim=100, r2=r2))
 		if sp.isnan(val_set_gen).any():
 			return simulate_genotypes_w_ld(n, m, n_samples, m_ld_chunk_size=100, r2=0.9)
 	return val_set_gen, val_set_D
@@ -85,17 +88,4 @@ def printtable(filename, p, N, M, Ntraits, validation_size=1000, validationN=10)
 
 
 if __name__ == "__main__":
-	# validation = simulate_genotypes(n = 1000, m = 10000, n_samples = 1)
-	# test = simulate_phenotypes_fast(validation, n = 10000, m = 10000, num_traits = 1, p = 0.05)
-	# x = simulate_genotypes_w_ld(n = 1000, m = 5000, n_samples = 2, m_ld_chunk_size = 100, r2 = 0.9)
-	#### construct test files
-	# N = [10,50, 100, 500, 1000,5000,10000, 50000, 100000]
-	# m = 6000
-	# r2 = [0.5,0.6,0.7,0.8,0.9]
-	# for n in N:
-	# 	for r in r2:
-	# 		print n,m,r
-	# 		data = simulate_genotypes_w_ld(n = n, m = m, n_samples = 1, m_ld_chunk_size = 100, r2 = r)
-	# 		filename = "genotypes/genotypes.n." + str(n) + "m." + str(m) + "r2." + str(r)
-	# 		write_genotypes(filename, data[0])
 	""

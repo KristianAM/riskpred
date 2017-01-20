@@ -58,6 +58,7 @@ def simulate_traits_fast(n, m, h2=0.5, p=1.0):
 		if M == 0:
 			M = 1
 		betas = sp.concatenate((stats.norm.rvs(0, sp.sqrt(h2 / M), size=M), sp.zeros(m - M, dtype=float)))
+		sp.random.shuffle(betas)
 	# coefficients are scaled to have mean 0 and variance 1
 
 	betas_var = sp.var(betas)
@@ -88,10 +89,11 @@ def LDinf(beta_hats, ld_radius, LD_matrix, n, h2):
 	return betainf
 
 
-def ml_iter(beta_hats, snps, ld_radius, h2, p_threshold):
+def ml_iter(beta_hats, snps, ld_radius, h2, p_threshold, printout = False, LD = None, LDmethod = True, p = 0.05, ref_ld = True, r2 = 0.9):
+	var_explained_list = []
+	var_explained_index = []
 	non_selected_indices = []
 	snps = sp.array(snps)
-
 	# Ordering the beta_hats, and storing the order
 	m = len(beta_hats)
 	beta_hats = beta_hats.tolist()
@@ -117,13 +119,14 @@ def ml_iter(beta_hats, snps, ld_radius, h2, p_threshold):
 				if pvalue <= p_threshold:
 					selected_indices.add(beta_i)
 					break
-
 				else:
 					is_not_finished = False
 					break
 
 		if is_not_finished:
 			# Iterating over the window around the selected beta
+			# Identy LD chunk
+			print beta_i
 			start_i = max(0, beta_i - ld_radius)
 			end_i = min(beta_i + ld_radius, m)
 			for i in range(start_i, end_i):
@@ -140,7 +143,10 @@ def ml_iter(beta_hats, snps, ld_radius, h2, p_threshold):
 					#print "betahatlist", beta_hat_list
 					bs = sp.array(beta_hat_list, dtype='single')
 					X = snps[ld_partners]
-					D = sp.dot(X, X.T) / float(n_test)
+					if LD.shape == (m,m):
+						D = LD[ld_partners]
+					else:
+						assert 0 > 1
 					ld_table['D'] = D
 					D_inv = linalg.pinv(D)
 					ld_table['D_inv'] = D_inv
@@ -153,7 +159,8 @@ def ml_iter(beta_hats, snps, ld_radius, h2, p_threshold):
 					added_var_explained = sumsq2 - d['sumsq']
 					# Is the added variance explained usually (always) larger than 0.  Perhaps a graph? 
 					# How good is this approximation?
-					
+					var_explained_list.append(added_var_explained)
+					var_explained_index.append(i)
 					d['pval'] = stats.chi2.sf(added_var_explained, 1)
 					d['sumsq'] = sumsq2
 					updated_beta_hats[i] = updated_beta[0]
@@ -173,8 +180,7 @@ def ml_iter(beta_hats, snps, ld_radius, h2, p_threshold):
 				Xi = snps[i]
 				Xpartners = snps[ld_partners]
 				upb = sp.array(updated_beta_hats, dtype='single')[ld_partners]
-				Di = sp.dot(Xi, Xpartners.T) / float(n_test)
-				print Di
+				Di = LD[i, ld_partners]
 				updated_beta_hats[i] = beta_hats[i] - sp.sum(sp.dot(Di, upb))
 
 	# Remove cojosnps
@@ -186,52 +192,26 @@ def ml_iter(beta_hats, snps, ld_radius, h2, p_threshold):
 	m, n = newX.shape
 	D = sp.dot(newX, newX.T) / float(n)
 
-	betainf = LDinf(beta_hats=newbetas, ld_radius=ld_radius, LD_matrix=D, n=n, h2=h2)
-
-	"""
-	normalizing beta hat values
-	Removed and instead attempt to normalize predicted Y hats.
-	"""
-	# #LDpred standard deviation
-	# betainf_std = sp.sqrt(sp.var(betainf))
-
-	# #normalize betainf weights
-	# betainf = (betainf / betainf_std) / m
-	# cojo_beta_hats = sp.array(updated_beta_hats)[selected_indices]
+	betainf = LDinf(beta_hats=newbetas, ld_radius=ld_radius, LD_matrix=D, n=n, h2=h2)		
+	if LDmethod:
+		if ref_ld:
+			ldDict = get_LDpred_ld_tables(genotypes.get_sample_D(50, m, num_sim = 50, r2=r2), ld_radius=ld_radius, h2=h2, n_training=n)
+		else:
+			ldDict = get_LDpred_ld_tables(newX, ld_radius=ld_radius, h2=h2, n_training=n)	
+		betainf = LDpred.ldpred_gibbs(newbetas, start_betas=betainf, n=n, ld_radius=ld_radius, p=p, ld_dict=ldDict["ld_dict"], h2=h2)["betas"]
 
 
-
-
-	# #normalize cojo weights
-	# if len(cojo_beta_hats) < 2:
-	#   cojo_std = 1  
-	# else:
-	# 	 print cojo_beta_hats
-	# 	 cojo_std = sp.sqrt(sp.var(cojo_beta_hats))
-	# cojo_beta_hats_norm = (cojo_beta_hats / cojo_std) / len(selected_indices)
-	# print "cojo snps", len(selected_indices)
-	# print "difference", sp.absolute(sp.sum(cojo_beta_hats_norm**2) - sp.sum(betainf**2))
-	
-	# assert sp.absolute(sp.sum(cojo_beta_hats_norm**2) - sp.sum(betainf**2)) < 0.05
-
-	# assert len(selected_indices) + len(non_selected_indices) == len(beta_hats), "error"
-
-	# updated_beta_hats_conc = sp.zeros(len(beta_hats))
-	# for i in range(len(beta_hats)):
-	# 	 if i in selected_indices:
-	# 		 index = selected_indices.index(i)
-	# 		 updated_beta_hats_conc[i] = cojo_beta_hats_norm[index]
-	# 	 else:
-	# 		 index = non_selected_indices.index(i)
-	# 		 updated_beta_hats_conc[i] = betainf[index]
-	
 	betainf_with_0 = sp.zeros(len(beta_hats))
 # 	updated_beta_hats_with_0 = sp.zeros(len(beta_hats))
 	betainf_with_0[non_selected_indices] = betainf
 
 # 	updated_beta_hats_with_0 = cojo_updated_beta_hats
 	cojo_updated_beta_hats = sp.array(cojo_updated_beta_hats)
-
+	if printout:
+		with open("added_var_explained.csv", 'w') as f:
+			print >>f, "added var explained \t index \n"
+			for i in var_explained_list:
+				print >>f, var_explained_list, "\t", var_explained_index, "\n"
 	return cojo_updated_beta_hats, betainf_with_0, len(selected_indices)
 
 def simulate_phenotypes(genotype, n, m, h2, p):
@@ -263,13 +243,13 @@ def simulate_phenotypes(genotype, n, m, h2, p):
 
 
 
-def test_accuracy(n, m, n_samples=10, genotype=None, h2=0.5, p=1.0, r2=0.9, m_ld_chunk_size=100, p_threshold=5e-8, validation_set=None, alpha=None, verbose=False, variance = False):
+def test_accuracy(n, m, n_samples=10, genotype=None, h2=0.5, p=1.0, r2=0.9, m_ld_chunk_size=100, p_threshold=5e-8, validation_set=None, alpha=None, verbose=False, variance = False, var_printout = False, ref_ld = False):
 	# Simulate training data
 	if verbose == True:
 		print "simulating training set"
 	training_set = genotypes.simulate_genotypes_w_ld(n=n, m=m, n_samples=1, m_ld_chunk_size=m_ld_chunk_size, r2=r2)
 	traingeno = training_set[0][0]
-	sample_D = training_set[1][0]
+	sample_Dref = genotypes.get_sample_D(10, m, num_sim = 50, r2=r2)
 	train_phen, train_betas = simulate_phenotypes(genotype=traingeno, n=n, m=m, h2=h2, p=p)
 
 	# estimate marginal beta hats
@@ -280,7 +260,7 @@ def test_accuracy(n, m, n_samples=10, genotype=None, h2=0.5, p=1.0, r2=0.9, m_ld
 		print "estimating alpha"
 	if alpha == None:
 		# Estimate the alpha for the training data that you already had, 
-		alpha = estimate_alpha(train_set = traingeno, train_phen = train_phen, betas_marg = betas_marg, train_betas = train_betas, n=n, m=m, h2=h2, p=p, r2=r2, m_ld_chunk_size=m_ld_chunk_size, p_threshold=p_threshold, n_samples = 2)
+		alpha = estimate_alpha(train_set = traingeno, train_phen = train_phen, betas_marg = betas_marg, train_betas = train_betas, n=n, m=m, h2=h2, p=p, r2=r2, m_ld_chunk_size=m_ld_chunk_size, p_threshold=p_threshold, n_samples = 1)
 
 	# simulate validation data or import data
 	if genotype == None:
@@ -306,7 +286,15 @@ def test_accuracy(n, m, n_samples=10, genotype=None, h2=0.5, p=1.0, r2=0.9, m_ld
 	Yhatscojopred = []
 	Yhatscojopred_betainf = []
 	Yhatscojopred_concatenated = []
-
+	YhatsLDpredref = []
+	Yhatscojopred3 = []
+	Yhatscojopred3_betainf = []
+	Yhatscojopred3ref = []
+	Yhatscojopred3ref_betainf = []
+	Yhatscojopred3_concatenated = []
+	Yhatscojopred3ref_concatenated = []
+	Yhatscojoref = []
+	Yhatsinfref = []
 	# validation accuracy list
 	val_accuracy_SMT = []
 	val_accuracy_PRS = []
@@ -316,27 +304,39 @@ def test_accuracy(n, m, n_samples=10, genotype=None, h2=0.5, p=1.0, r2=0.9, m_ld
 	val_accuracy_cojo = []
 	val_accuracy_cojopred = []
 	val_accuracy_cojopred2 = []
+	val_accuracy_LDpredref = []
+	val_accuracy_cojopred3 = []
+	val_accuracy_cojopred3ref = []
+	val_accuracy_cojoref = []
+	val_accuracy_infref = []
 	alpha_list = []
 
 	# beta_hats = simulate_beta_hats(true_betas = train_betas, n = n, m = m, r2 = r2, LD_matrix = sample_D, m_ld_chunk_size = m_ld_chunk_size)
 
 	beta_hats = betas_marg
+
 	sample_D = sp.dot(traingeno, traingeno.T) / float(n)
 
 	if verbose == True:
 		print "calculating LDpred"
-	betainf = LDinf(beta_hats=beta_hats, ld_radius=m_ld_chunk_size, LD_matrix=sample_D, n=n, h2=h2)
+	ref_genotype = genotypes.simulate_genotypes_w_ld(n=10, m=m, n_samples=1, m_ld_chunk_size=m_ld_chunk_size, r2=r2)[0][0]
+	ldDictref = get_LDpred_ld_tables(ref_genotype, ld_radius=m_ld_chunk_size, h2=h2, n_training=n)
 	ldDict = get_LDpred_ld_tables(traingeno, ld_radius=m_ld_chunk_size, h2=h2, n_training=n)
+
+	betainf = LDinf(beta_hats=beta_hats, ld_radius=m_ld_chunk_size, LD_matrix=sample_D, n=n, h2=h2)
+	betainfref = LDinf(beta_hats=beta_hats, ld_radius=m_ld_chunk_size, LD_matrix=sample_Dref, n=n, h2=h2)
+
 	betaLD = LDpred.ldpred_gibbs(beta_hats, start_betas=betainf, n=n, ld_radius=m_ld_chunk_size, p=p, ld_dict=ldDict["ld_dict"], h2=h2)
-		
+	betaLDref = LDpred.ldpred_gibbs(beta_hats, start_betas=betainfref, n=n, ld_radius=m_ld_chunk_size, p=p, ld_dict=ldDictref["ld_dict"], h2=h2)
 
 	# estimate cojo corrected beta_hats
 	if verbose == True:
 		print "calculating cojo"
-	cojo_beta_hats, cojo_betainf, n_cojo_selected_indices = ml_iter(beta_hats, traingeno, ld_radius=m_ld_chunk_size, h2=h2, p_threshold=p_threshold)
+	cojo_beta_hats, cojo_betainf, n_cojo_selected_indices = ml_iter(beta_hats, traingeno, ld_radius=m_ld_chunk_size, h2=h2, p_threshold=p_threshold, printout = var_printout, LD = sample_D, ref_ld = False, LDmethod = False, r2 = r2)
 	cojopred_beta_hats = cojo_beta_hats[:]
 
-
+	cojo_beta_hats_LDpred_ref, cojo_betainf_LDpred_ref, n_cojo_selected_indices_ref = ml_iter(beta_hats, traingeno, ld_radius=m_ld_chunk_size, h2=h2, p_threshold=p_threshold, printout = var_printout, LD = sample_Dref, ref_ld = True, LDmethod = True, p = p, r2 = r2 )
+	cojo_beta_hats_LDpred, cojo_betainf_LDpred, n_cojo_selected_indices = ml_iter(beta_hats, traingeno, ld_radius=m_ld_chunk_size, h2=h2, p_threshold=p_threshold, printout = var_printout, LD = sample_D, ref_ld = True, LDmethod = True, p = p, r2 = r2)
 	if verbose == True:
 		print "calculating pval thresholding"
 	if p_threshold < 1:
@@ -363,19 +363,20 @@ def test_accuracy(n, m, n_samples=10, genotype=None, h2=0.5, p=1.0, r2=0.9, m_ld
 		yTy = sp.dot(train_phen.T, train_phen)
 		D = sp.dot(traingeno, traingeno.T)/float(n)
 
-		Evarbb = sp.sum(cojo_beta_hats**2) - (10.0/n)
+		Evarbb = sp.sum(cojo_beta_hats**2) - (1.0/n)
 
 
 		bDbeta = sp.dot(sp.dot(sp.array(cojo_beta_hats).T, sp.identity(m)), betas_marg)
-		print 'bDbeta', bDbeta
-		print 'yTy', yTy
 		R2J = bDbeta / yTy
-		print R2J
-		sigma2 = max(h2 - R2J, h2*0.1)
-		print 'sigma2', sigma2
+		print "variance explained", Evarbb
+		#sigma2 = max(h2 - R2J, h2*0.1)
+		#print 'sigma2', sigma2
 		sigma2 = max(h2 - Evarbb, h2*0.1) * 1.1
-		print 'sigma2 new', sigma2
+		sigma2 = min(max(Evarbb, h2 * 0.1), 1.0)
+		#print 'sigma2 new', sigma2
 		alpha = sigma2
+		alpha = 1.0-(p**(1.0/2.0))
+		print alpha
 	if verbose == True:
 		print "validating"
 	for i in xrange(n_samples):
@@ -412,16 +413,33 @@ def test_accuracy(n, m, n_samples=10, genotype=None, h2=0.5, p=1.0, r2=0.9, m_ld
 		Yhatsinf.append(sp.dot(geno[i].T, betainf))
 		val_accuracy_inf.append(stats.pearsonr(validation_phen, Yhatsinf[i])[0] ** 2)
 
+		Yhatsinfref.append(sp.dot(geno[i].T, betainfref))
+		val_accuracy_infref.append(stats.pearsonr(validation_phen, Yhatsinfref[i])[0] ** 2)
+
 		YhatsLDpred.append(sp.dot(geno[i].T, betaLD["betas"]))
 		val_accuracy_LDpred.append(stats.pearsonr(validation_phen, YhatsLDpred[i])[0] ** 2)
+
+		YhatsLDpredref.append(sp.dot(geno[i].T, betaLDref["betas"]))
+		val_accuracy_LDpredref.append(stats.pearsonr(validation_phen, YhatsLDpredref[i])[0] ** 2)
 
 		Yhatscojo.append(sp.dot(geno[i].T, cojo_beta_hats))
 		if sp.sum(Yhatscojo[i]) != 0:
 			val_accuracy_cojo.append(stats.pearsonr(validation_phen, Yhatscojo[i])[0] ** 2)
 
+		Yhatscojoref.append(sp.dot(geno[i].T, cojo_beta_hats_LDpred_ref))
+		if sp.sum(Yhatscojo[i]) != 0:
+			val_accuracy_cojoref.append(stats.pearsonr(validation_phen, Yhatscojoref[i])[0] ** 2)
+
+
 		Yhatscojopred.append(sp.dot(geno[i].T, cojo_beta_hats))
 		Yhatscojopred_betainf.append(sp.dot(geno[i].T, cojo_betainf))
 		val_accuracy_cojopred2.append(stats.pearsonr(sp.dot(geno[i].T, cojo_beta_hats)*alpha + sp.dot(geno[i].T, betainf) * (1-alpha), validation_phen))
+
+		Yhatscojopred3.append(sp.dot(geno[i].T, cojo_beta_hats_LDpred))
+		Yhatscojopred3_betainf.append(sp.dot(geno[i].T, cojo_betainf_LDpred))
+
+		Yhatscojopred3ref.append(sp.dot(geno[i].T, cojo_beta_hats_LDpred_ref))
+		Yhatscojopred3ref_betainf.append(sp.dot(geno[i].T, cojo_betainf_LDpred_ref))
 		"""
 		Post normalization of Y hat values
 		"""
@@ -436,37 +454,70 @@ def test_accuracy(n, m, n_samples=10, genotype=None, h2=0.5, p=1.0, r2=0.9, m_ld
 		val_accuracy_cojopred.append(stats.pearsonr(validation_phen, Yhatscojopred_concatenated[i])[0] ** 2)
 		if n_cojo_selected_indices == 0:
 			assert Yhatscojopred_concatenated[i].any() == Yhatsinf[i].any()
+
+		if n_cojo_selected_indices > 0:
+			Yhatscojopred3[i] = (Yhatscojopred3[i] / sp.var(Yhatscojopred3[i]))
+
+			Yhatscojopred3_betainf[i] = (Yhatscojopred3_betainf[i] / sp.var(Yhatscojopred3_betainf[i]))
+
+			Yhatscojopred3_concatenated.append((sp.array(Yhatscojopred3[i]) * alpha) + (sp.array(Yhatscojopred3_betainf[i]) * (1.0 - alpha)))
+		else:
+			Yhatscojopred3_concatenated.append(sp.array(Yhatscojopred3[i]) + sp.array(Yhatscojopred3_betainf[i]))
+		val_accuracy_cojopred3.append(stats.pearsonr(validation_phen, Yhatscojopred3_concatenated[i])[0] ** 2)
+
+		if n_cojo_selected_indices > 0:
+			Yhatscojopred3ref[i] = (Yhatscojopred3ref[i] / sp.var(Yhatscojopred3ref[i]))
+
+			Yhatscojopred3ref_betainf[i] = (Yhatscojopred3ref_betainf[i] / sp.var(Yhatscojopred3ref_betainf[i]))
+
+			Yhatscojopred3ref_concatenated.append((sp.array(Yhatscojopred3ref[i]) * alpha) + (sp.array(Yhatscojopred3ref_betainf[i]) * (1.0 - alpha)))
+		else:
+			Yhatscojopred3ref_concatenated.append(sp.array(Yhatscojopred3ref[i]) + sp.array(Yhatscojopred3ref_betainf[i]))
+		val_accuracy_cojopred3ref.append(stats.pearsonr(validation_phen, Yhatscojopred3_concatenated[i])[0] ** 2)
+
+
 	alpha_list.append(alpha)
 	accSMT = sp.mean(val_accuracy_SMT)
 	accPRS = sp.mean(val_accuracy_PRS)
 	accPval = sp.mean(val_accuracy_Pval)
 	accinf = sp.mean(val_accuracy_inf)
 	accLDpred = sp.mean(val_accuracy_LDpred)
+	accLDpredref = sp.mean(val_accuracy_LDpredref)
 	acccojopred2 = sp.mean(val_accuracy_cojopred2)
+	acccojopred3 = sp.mean(val_accuracy_cojopred3)
+	acccojopred3ref = sp.mean(val_accuracy_cojopred3ref)
+	acccojoref = sp.mean(val_accuracy_cojoref)
+	accinfref = sp.mean(val_accuracy_infref)
 	if len(val_accuracy_cojo) != 0:
 		acccojo = sp.mean(val_accuracy_cojo)
 	else:
 		acccojo = None
 	acccojopred = sp.mean(val_accuracy_cojopred)
-	return  accSMT, accPRS, accPval, accinf, accLDpred, acccojo, acccojopred, acccojopred2, alpha, n_cojo_selected_indices
+	returndict = {'single marker test' : accSMT, 'polygenic risk scores' : accPRS, 'pvalue thresholding' : accPval,
+	'LD-infinitesimal' : accinf, 'LD-pred' : accLDpred, 'cojo' : acccojo, 'cojopred' : acccojopred,
+	 'cojopred2' : acccojopred2, 'alpha' : alpha, 'n selected SNPS in cojo' : n_cojo_selected_indices, 'cojopred3' : acccojopred3, 'cojopred3ref' : acccojopred3ref,
+	 'LDpredref' : accLDpredref, 'cojoref' : acccojoref, 'LDinfref' : accinfref}
+	print returndict
+	return  accSMT, accPRS, accPval, accinf, accLDpred, acccojo, acccojopred, acccojopred2, acccojopred3, acccojopred3ref, accLDpredref, acccojoref, accinfref, alpha, n_cojo_selected_indices
 
-def printtable(filename, p, N, M, Ntraits, validationN=5, variance = False):
+def printtable(filename, p, N, M, Ntraits, validationN=5, variance = False, alpha = 0.5, ref_ld = True):
 	with open(filename, 'w') as f:
-		print >> f, 'N \t M \t P \t \t SMT \t PRS \t Pval \t LDinf \t LDpred \t cojo \t cojopred \t cojopred2 \t alpha \n' 
+		print >> f, 'N \t M \t P \t \t SMT \t PRS \t Pval \t LDinf \t LDpred \t cojo \t cojopred \t cojopred2 \t cojopred3 \t cojopred3ref \t LDpredref \t cojoref \t LDinfref \t alpha \n' 
 		for i in range(len(N)):
 
 			for m in range(len(M)):
 
-				validation = genotypes.simulate_genotypes_w_ld(n=2000, m=M[m], n_samples=10)
-				for j in p:
+				validation = genotypes.simulate_genotypes_w_ld(n=2000, m=M[m], n_samples=10, validation = True)
+				for j in 																																																																																																																																																																																																																																												p:
 					print j
 					for l in range(Ntraits):
 						print "trait", l, "N", N[i], "M", M[m], "p", j
 						output = test_accuracy(N[i], M[m], n_samples=validationN, genotype=validation, h2=0.5, p=j,
-						 r2=0.9, m_ld_chunk_size=100, p_threshold=5e-8, validation_set=None, alpha=0.5, verbose=False, variance = variance)
-						print >> f, N[i], "\t", M[m], "\t", j, "\t", output[0], "\t", output[1], "\t", output[2], "\t", output[3], "\t", output[4], "\t", output[5], "\t", output[6], "\t", output[7], "\t", output[8], "\n"
+						 r2=0.9, m_ld_chunk_size=100, p_threshold=5e-8, validation_set=None, alpha=0.5, verbose=False, variance = variance, ref_ld = ref_ld)
+						print >> f, N[i], "\t", M[m], "\t", j, "\t", output[0], "\t", output[1], "\t", output[2], "\t", output[3], "\t", output[4], "\t", output[5], "\t", output[6], "\t", output[7], "\t", output[8], "\t", output[9], "\t", output[10], "\t", output[11], "\t", output[12], "\t", output[13], "\n"
 
 def alpha_experiment(n, m, h2, p, r2, m_ld_chunk_size, p_threshold, filename, n_samples=10):
+
 	with open(filename, 'w') as f:
 		print >> f, 'N \t M \t P \t Alpha, accuracy \n'
 		for j in p:
@@ -482,35 +533,36 @@ def alpha_experiment(n, m, h2, p, r2, m_ld_chunk_size, p_threshold, filename, n_
 
 def r2_experiment(n, m, h2, p, m_ld_chunk_size, p_threshold, filename):
 	with open(filename, 'w') as f:
-		print >> f, 'N \t M \t P \t r2 \t accuracy \t SMT \t PRS \t Pval \t LDinf \t LDpred \t cojo \t cojopred \n'
+		print >> f, 'N \t M \t P \t r2 \t SMT \t PRS \t Pval \t LDinf \t LDpred \t cojo \t cojopred \t cojopred2 \t cojopred3 \t cojopred3ref \t LDpredref \t cojoref \t LDinfref \t alpha\n'
 		r2 = [0.1 * x for x in range(10)]
 		print r2
 		for j in p:
 			print j
 			for i in r2:
-				validation = genotypes.simulate_genotypes_w_ld(n=2000, m=m, r2=i, n_samples=20)
-				for k in range(20):
-					output = test_accuracy(n=n, m=m, n_samples=40, genotype=validation, h2=0.5, p=j,
-					 r2=i, m_ld_chunk_size=100, p_threshold=5e-8, alpha=0.5, verbose=False)
-					print >> f, n, "\t", m, "\t", j, "\t", i, "\t", "\t", output[0], "\t", output[1], "\t", output[2], "\t", output[3], "\t", output[4], "\t", output[5], "\t", output[6], "\n"
+				validation = genotypes.simulate_genotypes_w_ld(n=2000, m=m, r2=i, n_samples=10, validation = True)
+				for k in range(5):
+					output = test_accuracy(n=n, m=m, n_samples=10, genotype=validation, h2=0.5, p=j,
+					 r2=i, m_ld_chunk_size=100, p_threshold=5e-8, alpha=0.5, verbose=False, variance = True)
+					print >> f, n, "\t", m, "\t", j, "\t", i, "\t", output[0], "\t", output[1], "\t", output[2], "\t", output[3], "\t", output[4], "\t", output[5], "\t", output[6], "\t", output[7],  "\t", output[8], "\t", output[9], "\t", output[10], "\t", output[11], "\t", output[12], "\t", output[13], "\t", output[14], "\n"
 
-def estimate_alpha(train_set, train_phen, betas_marg, train_betas, n, m, h2, p, r2, m_ld_chunk_size, p_threshold, testing=False, n_samples=20):
+def estimate_alpha(train_set, train_phen, betas_marg, train_betas, n, m, h2, p, r2, m_ld_chunk_size, p_threshold, testing=False, n_samples=1):
 	# Try a smaller set of alphas, e.g. {0.1,0.3,0.5,0.7,0.9}
 	alpha_list = [x * 0.05 for x in range(1, 21)]
 	beta_hats = betas_marg
 	sample_D = sp.dot(train_set, train_set.T) / float(n)
-	cojo_beta_hats, cojo_betainf, n_cojo_selected_indices = ml_iter(betas_marg, train_set, ld_radius=m_ld_chunk_size, h2=h2, p_threshold=p_threshold)
+	cojo_beta_hats, cojo_betainf, n_cojo_selected_indices = ml_iter(betas_marg, train_set, ld_radius=m_ld_chunk_size, h2=h2, p_threshold=p_threshold, printout = False, LD = sample_D)
 	betas = train_betas
 	cojopred_beta_hats = cojo_beta_hats[:]
-
+	n_samples = 1
 	accuracy = []
+
 	for alpha in alpha_list:
 		print alpha
 		CVaccuracy = []
-
-		sample = genotypes.simulate_genotypes_w_ld(n=n, m=m, n_samples=n_samples, m_ld_chunk_size=m_ld_chunk_size, r2=r2)
+		#sample = genotypes.simulate_genotypes_w_ld(n=n, m=m, n_samples=n_samples, m_ld_chunk_size=m_ld_chunk_size, r2=r2)
 		for i in range(n_samples):
-			geno = sample[0][i]
+			#geno = sample[0][i]
+			geno = train_set
 			Yhatscojopred = sp.dot(geno.T, cojo_beta_hats)
 			Yhatscojopred_betainf = (sp.dot(geno.T, cojo_betainf))
 
@@ -530,18 +582,19 @@ def estimate_alpha(train_set, train_phen, betas_marg, train_betas, n, m, h2, p, 
 
 
 
-			validation_phen_noise = stats.norm.rvs(0, sp.sqrt(1.0 - h2), size=n)
-			validation_phen_noise = sp.sqrt((1.0 - h2) / sp.var(validation_phen_noise)) * validation_phen_noise
+			#validation_phen_noise = stats.norm.rvs(0, sp.sqrt(1.0 - h2), size=n)
+			#validation_phen_noise = sp.sqrt((1.0 - h2) / sp.var(validation_phen_noise)) * validation_phen_noise
 
-			validation_genetic_part = sp.dot(geno.T, betas)
-			validation_genetic_part = sp.sqrt(h2 / sp.var(validation_genetic_part)) * validation_genetic_part
+			#validation_genetic_part = sp.dot(geno.T, betas)
+			#validation_genetic_part = sp.sqrt(h2 / sp.var(validation_genetic_part)) * validation_genetic_part
 
-			validation_phen = validation_genetic_part + validation_phen_noise
+			#validation_phen = validation_genetic_part + validation_phen_noise
+			validation_phen = train_phen
 
-
-
-			CVaccuracy.append(stats.pearsonr(validation_phen, Yhatscojopred_concatenated)[0] ** 2)
-		accuracy.append(sp.mean(CVaccuracy))
+			print Yhatscojopred.shape
+			#CVaccuracy.append(stats.pearsonr(validation_phen, Yhatscojopred_concatenated)[0] ** 2)
+			accuracy.append(stats.pearsonr(validation_phen, Yhatscojopred_concatenated)[0] ** 2)
+		#accuracy.append(sp.mean(CVaccuracy))
 	best_accuracy_index = accuracy.index(max(accuracy))
 	best_alpha = alpha_list[best_accuracy_index]
 	if testing == True:
@@ -562,20 +615,36 @@ def beta_experiment(n = 4000, m = 8000, p = [0.0001, 0.5, 1.0], normalized = Fal
 	LDinf_betas = []
 	cojo_betas = []
 	cojopred_betas = []
+	cojo_betas_ref = []
+	LDpred_ref = []
 	for i in p:
+		print "start"
 		training_set = genotypes.simulate_genotypes_w_ld(n=n, m=m, n_samples=1, m_ld_chunk_size= 100, r2=0.9)
 		traingeno = training_set[0][0]
 		sample_D = training_set[1][0]
 		train_phen, train_betas = simulate_phenotypes(genotype=traingeno, n=n, m=m, h2=0.5, p= i)
 		betas_marg = (1.0 / n) * sp.dot(train_phen, traingeno.T)
-	
-
 		beta_hats = betas_marg
+		refgenome = genotypes.simulate_genotypes_w_ld(n=5, m=m, n_samples=1, m_ld_chunk_size= 100, r2=0.9)[0][0]
+		sample_D = sp.dot(refgenome, refgenome.T) / float(n)
+		ldDict = get_LDpred_ld_tables(refgenome, ld_radius= 100, h2= 0.5, n_training= n)
+		print "betainf"
+		betainf = LDinf(beta_hats=beta_hats, ld_radius=100, LD_matrix=sample_D, n=n, h2=0.5)
+		print "LDpred"
+		betaLD_ref = LDpred.ldpred_gibbs(beta_hats, start_betas=betainf, n=n, ld_radius= 100, p= i, ld_dict=ldDict["ld_dict"], h2=0.5)
+		print "cojo"
+		cojo_beta_hats_ref, cojo_betainf, n_cojo_selected_indices = ml_iter(beta_hats, traingeno, ld_radius= 100, h2=0.5, p_threshold=5e-8, printout = False, LD = sample_D)
+
+
 		sample_D = sp.dot(traingeno, traingeno.T) / float(n)
+		print "betainf"
 		betainf = LDinf(beta_hats=beta_hats, ld_radius=100, LD_matrix=sample_D, n=n, h2=0.5)
 		ldDict = get_LDpred_ld_tables(traingeno, ld_radius= 100, h2= 0.5, n_training= n)
+		print "LDpred"
 		betaLD = LDpred.ldpred_gibbs(beta_hats, start_betas=betainf, n=n, ld_radius= 100, p= i, ld_dict=ldDict["ld_dict"], h2=0.5)
-		cojo_beta_hats, cojo_betainf, n_cojo_selected_indices = ml_iter(beta_hats, traingeno, ld_radius= 100, h2=0.5, p_threshold=5e-8)
+
+		cojo_beta_hats, cojo_betainf, n_cojo_selected_indices = ml_iter(beta_hats, traingeno, ld_radius= 100, h2=0.5, p_threshold=5e-8, printout = False, LD = sample_D)
+		print "done"
 		Z = n * (beta_hats ** 2)
 		pval = []
 		indices = []
@@ -588,12 +657,17 @@ def beta_experiment(n = 4000, m = 8000, p = [0.0001, 0.5, 1.0], normalized = Fal
 		beta_hatsPruned[indices] = beta_hats[indices]
 
 		if normalized:
-			betas_marg = betas_marg - train_betas
-			beta_hatsPruned = beta_hatsPruned - train_betas
-			betaLD['betas'] = betaLD['betas'] - train_betas
-			betainf = betainf - train_betas
-			cojo_beta_hats = cojo_beta_hats - train_betas
-			cojo_betainf = cojo_betainf - train_betas
+			betas_marg = (betas_marg - train_betas)**2
+			beta_hatsPruned = (beta_hatsPruned - train_betas)**2
+			betaLD['betas'] = (betaLD['betas'] - train_betas)**2
+			betainf = (betainf - train_betas)**2
+			cojo_beta_hats = (cojo_beta_hats - train_betas)**2
+			cojo_betainf = (cojo_betainf - train_betas)**2
+			cojo_beta_hats_ref = (cojo_beta_hats_ref - train_betas)**2
+			betaLD_ref['betas'] = (betaLD_ref['betas'] - train_betas)**2
+			train_betas = train_betas - train_betas
+
+			assert train_betas.all() == 0
 		true_betas.append(train_betas)
 		marginal_betas.append(betas_marg)
 		pval_betas.append(beta_hatsPruned)
@@ -601,35 +675,23 @@ def beta_experiment(n = 4000, m = 8000, p = [0.0001, 0.5, 1.0], normalized = Fal
 		LDinf_betas.append(betainf)
 		cojo_betas.append(cojo_beta_hats)
 		cojopred_betas.append(cojo_betainf)
-
-	return true_betas, marginal_betas, pval_betas, LDpred_betas, LDinf_betas, cojo_betas, cojopred_betas
+		cojo_betas_ref.append(cojo_beta_hats_ref)
+		LDpred_ref.append(betaLD_ref['betas'])
+	return true_betas, marginal_betas, pval_betas, LDpred_betas, LDinf_betas, cojo_betas, cojopred_betas, LDpred_ref, cojo_betas_ref
 
 if __name__ == "__main__":
 	""
-	# test = []
-	# for i in range(50):
-	# 	test.append(test_accuracy(n = 1000, m = 2000, n_samples = 5,  genotype = None,  h2 = 0.5, p = 0.03, r2 = 0.9, m_ld_chunk_size = 100, p_threshold = 5e-8, validation_set = None, alpha = 0.5, verbose = True))
-
-	# t = map(list,zip(*test))
-	#p = [x * 0.0002 for x in range(1, 11)]
-	#p = p + [x * 0.001 for x in range(2, 11)]
-	#p = p + [x * 0.01 for x in range(2, 11)]
-	#p = p + [x * 0.2 for x in range(1, 6)]
-	N = [3000]
-	M = [4000]
-	p = [0.01, 0.05, 0.1, 0.2, 0.5, 0.7, 1.0]
-	alpha_experiment(n=3000, m=4000, h2=0.5, p=p, r2=0.9, m_ld_chunk_size=100, p_threshold=5e-8, filename="alpha_as_a_function_of_p", n_samples=50)
-	#r2_experiment(n = 200, m = 400, h2 = 0.5, p = p, m_ld_chunk_size = 100, p_threshold = 5e-8, filename = "r2_and_acc.csv")
-	#p = [0.001, 0.01, 0.1, 1]
-	printtable("effectofP_NM0.1_variance", p = p, N = N, M = M, Ntraits = 20, variance = True)
-	#print "0.1"
-	# N = [3000]
-	# printtable("effectofP_NM0.5", p = p, N = N, M = M, Ntraits = 10)
-	# print "0.5"
-	# N = [4800]
-	# printtable("effectofP_NM0.8", p = p, N = N, M = M, Ntraits = 10)
-	# print "0.8"
-	# N = [9000]
-	# printtable("effectofP_NM0.1.5", p = p, N = N, M = M, Ntraits = 10)
-	# print "1.5"
+	#N = [1000]
+	#M = [2000]
+	#p = [0.0005, 0.001, 0.01, 0.05, 0.1, 0.5, 0.7, 1.0]
+	#alpha_experiment(n= 2000, m= 4000, h2=0.5, p=p, r2=0.9, m_ld_chunk_size=100, p_threshold=5e-8, filename="alpha_as_a_function_of_p", n_samples=50)
+	#p = [0.0005, 0.5, 1.0]
+	#r2_experiment(n = 1000, m = 2000, h2 = 0.5, p = p, m_ld_chunk_size = 100, p_threshold = 5e-8, filename = "r2_and_acc.csv")
+	#printtable("effectofP_NM05_new_method_4_variance.csv", p = p, N = N, M = M, Ntraits = 10, variance = True)
+	#N = [200]
+	#printtable("effectofP_NM01_new_method_4_variance.csv", p = p, N = N, M = M, Ntraits = 10, variance = True)
+	#N = [1600]
+	#printtable("effectofP_NM08_new_method_4_variance.csv", p = p, N = N, M = M, Ntraits = 10, variance = True)
+	#N = [3000]
+	#printtable("effectofP_NM15_new_method_4_variance.csv", p = p, N = N, M = M, Ntraits = 10, variance = True)
 	
